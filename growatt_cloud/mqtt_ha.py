@@ -44,34 +44,26 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "connectivity": ("Connectivity", None, "connectivity", None, "binary_sensor"),
     "wifi_signal": ("WiFi Signal", "dBm", "signal_strength", "measurement", "sensor"),
     "last_update": ("Last Update", None, "timestamp", None, "sensor"),
-    "battery1_soc": ("Battery 1 SoC (Tower 1)", "%", "battery", "measurement", "sensor"),
-    "battery1_temp": ("Battery 1 Temperature (Tower 1)", "°C", "temperature", "measurement", "sensor"),
-    "battery2_soc": ("Battery 2 SoC (Tower 2)", "%", "battery", "measurement", "sensor"),
-    "battery2_temp": ("Battery 2 Temperature (Tower 2)", "°C", "temperature", "measurement", "sensor"),
+    "battery1_soc": ("Battery 1 SoC (Speicher 1)", "%", "battery", "measurement", "sensor"),
+    "battery1_temp": ("Battery 1 Temperature (Speicher 1)", "°C", "temperature", "measurement", "sensor"),
+    "battery2_soc": ("Battery 2 SoC (Speicher 2)", "%", "battery", "measurement", "sensor"),
+    "battery2_temp": ("Battery 2 Temperature (Speicher 2)", "°C", "temperature", "measurement", "sensor"),
     "battery3_soc": ("Battery 3 SoC (Tower 3)", "%", "battery", "measurement", "sensor"),
     "battery3_temp": ("Battery 3 Temperature (Tower 3)", "°C", "temperature", "measurement", "sensor"),
     "battery4_soc": ("Battery 4 SoC (Tower 4)", "%", "battery", "measurement", "sensor"),
     "battery4_temp": ("Battery 4 Temperature (Tower 4)", "°C", "temperature", "measurement", "sensor"),
-    "pv1_power": ("PV1 Power (Tower 1)", "W", "power", "measurement", "sensor"),
-    "pv1_voltage": ("PV1 Voltage (Tower 1)", "V", "voltage", "measurement", "sensor"),
-    "pv1_current": ("PV1 Current (Tower 1)", "A", "current", "measurement", "sensor"),
-    "pv2_power": ("PV2 Power (Tower 1)", "W", "power", "measurement", "sensor"),
-    "pv2_voltage": ("PV2 Voltage (Tower 1)", "V", "voltage", "measurement", "sensor"),
-    "pv2_current": ("PV2 Current (Tower 1)", "A", "current", "measurement", "sensor"),
-    "pv3_power": ("PV3 Power (Tower 2)", "W", "power", "measurement", "sensor"),
-    "pv3_voltage": ("PV3 Voltage (Tower 2)", "V", "voltage", "measurement", "sensor"),
-    "pv3_current": ("PV3 Current (Tower 2)", "A", "current", "measurement", "sensor"),
-    "pv4_power": ("PV4 Power (Tower 2)", "W", "power", "measurement", "sensor"),
-    "pv4_voltage": ("PV4 Voltage (Tower 2)", "V", "voltage", "measurement", "sensor"),
-    "pv4_current": ("PV4 Current (Tower 2)", "A", "current", "measurement", "sensor"),
-    "pv1_temp": ("PV1 Temperature (Tower 1)", "°C", "temperature", "measurement", "sensor"),
-    "pv2_temp": ("PV2 Temperature (Tower 1)", "°C", "temperature", "measurement", "sensor"),
-    "pv3_temp": ("PV3 Temperature (Tower 2)", "°C", "temperature", "measurement", "sensor"),
-    "pv4_temp": ("PV4 Temperature (Tower 2)", "°C", "temperature", "measurement", "sensor"),
-    "solar_power_tower1": ("Solar Power Tower 1", "W", "power", "measurement", "sensor"),
-    "solar_power_tower2": ("Solar Power Tower 2", "W", "power", "measurement", "sensor"),
-    "generation_today_tower1": ("Generation Today Tower 1", "kWh", "energy", "total_increasing", "sensor"),
-    "generation_today_tower2": ("Generation Today Tower 2", "kWh", "energy", "total_increasing", "sensor"),
+    "pv1_power": ("PV1 Power", "W", "power", "measurement", "sensor"),
+    "pv1_voltage": ("PV1 Voltage", "V", "voltage", "measurement", "sensor"),
+    "pv1_current": ("PV1 Current", "A", "current", "measurement", "sensor"),
+    "pv2_power": ("PV2 Power", "W", "power", "measurement", "sensor"),
+    "pv2_voltage": ("PV2 Voltage", "V", "voltage", "measurement", "sensor"),
+    "pv2_current": ("PV2 Current", "A", "current", "measurement", "sensor"),
+    "pv1_temp": ("PV1 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "pv2_temp": ("PV2 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "solar_power_tower1": ("Solar Power Speicher 1", "W", "power", "measurement", "sensor"),
+    "solar_power_tower2": ("Solar Power Speicher 2", "W", "power", "measurement", "sensor"),
+    "generation_today_tower1": ("Generation Today Speicher 1", "kWh", "energy", "total_increasing", "sensor"),
+    "generation_today_tower2": ("Generation Today Speicher 2", "kWh", "energy", "total_increasing", "sensor"),
     "ac_power": ("AC Power", "W", "power", "measurement", "sensor"),
     "ac_power_r": ("AC Power R", "W", "power", "measurement", "sensor"),
     "ac_power_s": ("AC Power S", "W", "power", "measurement", "sensor"),
@@ -136,12 +128,6 @@ _TOWER_SENSOR_MAP: dict[int, dict[str, str]] = {
         "battery_temp": "battery2_temp",
         "solar_power": "solar_power_tower2",
         "generation_today": "generation_today_tower2",
-        "pv1_power": "pv3_power",
-        "pv1_voltage": "pv3_voltage",
-        "pv1_current": "pv3_current",
-        "pv2_power": "pv4_power",
-        "pv2_voltage": "pv4_voltage",
-        "pv2_current": "pv4_current",
         "connectivity": "connectivity",
     },
     3: {
@@ -161,12 +147,6 @@ _TOWER_SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str
     "battery_temp": ("Battery Temperature", "°C", "temperature", "measurement", "sensor"),
     "solar_power": ("Solar Power", "W", "power", "measurement", "sensor"),
     "generation_today": ("Generation Today", "kWh", "energy", "total_increasing", "sensor"),
-    "pv1_power": ("PV1 Power", "W", "power", "measurement", "sensor"),
-    "pv1_voltage": ("PV1 Voltage", "V", "voltage", "measurement", "sensor"),
-    "pv1_current": ("PV1 Current", "A", "current", "measurement", "sensor"),
-    "pv2_power": ("PV2 Power", "W", "power", "measurement", "sensor"),
-    "pv2_voltage": ("PV2 Voltage", "V", "voltage", "measurement", "sensor"),
-    "pv2_current": ("PV2 Current", "A", "current", "measurement", "sensor"),
     "connectivity": ("Connectivity", None, "connectivity", None, "binary_sensor"),
 }
 
@@ -548,8 +528,8 @@ class HaMqtt:
                 continue
 
             keys = sorted(tower_values)
-            device_name = f"{label} Tower {tower}"
-            model = f"Growatt {label} Tower {tower}"
+            device_name = f"{label} Speicher {tower}"
+            model = f"Growatt {label} Speicher {tower}"
             sig = f"v1|tower|{device_name}|{'|'.join(keys)}"
             new_keys = set(keys)
             self._wanted_by_node[node] = new_keys

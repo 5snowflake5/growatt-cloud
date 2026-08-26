@@ -4,6 +4,15 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.20] – 2026-08-26
+
+### Changed
+- **Speicher 2 PV** = `Solar Power − PV1 − PV2` (Rest), nicht PV3/PV4 (Noah hat nur 2 Strings).
+- PV3/PV4 im useful-Modus entfernt; virtuelles Gerät heißt **Noah Speicher 2**.
+
+### Note
+- Mit deinen Werten: 268 − 124 − 112 = **32 W** → Solar Power Speicher 2.
+
 ## [0.1.19] – 2026-08-26
 
 ### Added
