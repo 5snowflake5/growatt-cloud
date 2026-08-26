@@ -15,10 +15,13 @@ LOG = logging.getLogger("growatt-cloud.api")
 DEFAULT_SERVER = "https://openapi.growatt.com"
 
 # Offizielle Limits (Showdoc / growatt-public-api):
-# Noah/Nexa energy: 1/min · andere Geräte energy: 1/5min · Device-Liste: 1/5s
+# Noah/Nexa energy (queryLastData): 1/min account-weit
+# andere Geräte energy: 1/5min account-weit
+# Device-Liste: 1/5s · DeviceInfo: ~5min · WiFi: ~5s
 MIN_INTERVAL_NOAH_S = 60
 MIN_INTERVAL_OTHER_S = 300
 MIN_INTERVAL_LIST_S = 5
+MIN_INTERVAL_AUX_S = 3  # höfliche Pause zwischen Info/WiFi
 
 
 class GrowattApiError(RuntimeError):
@@ -39,9 +42,10 @@ class GrowattCloudApi:
         self._last_wifi: dict[str, float] = {}
         self._info_cache: dict[str, dict[str, Any]] = {}
         self._wifi_cache: dict[str, float] = {}
-        # Account-Limits sind typ-weit, nicht pro Gerät (2× Noah = trotzdem max 1/min)
-        self._last_noah_call = 0.0
-        self._last_other_call = 0.0
+        # Nur queryLastData teilt sich den strengen Energy-Slot (Noah 60s / andere 300s)
+        self._last_noah_energy = 0.0
+        self._last_other_energy = 0.0
+        self._last_aux = 0.0
         self._backoff_until = 0.0
 
     def _request(
@@ -52,7 +56,6 @@ class GrowattCloudApi:
         data: dict[str, Any] | None = None,
         timeout: float = 30.0,
     ) -> dict[str, Any]:
-        # Session der Lib nutzt base .../v4 + endpoint; beides funktioniert.
         url = f"{self.server_url}/v4/{path.lstrip('/')}"
         if params:
             url = f"{url}?{urllib.parse.urlencode(params)}"
@@ -94,26 +97,40 @@ class GrowattCloudApi:
             raise err
         return payload
 
-    def _wait_type_slot(self, dtype: str) -> None:
-        """Growatt limitiert Noah/Nexa und andere Geräte account-weit."""
+    def _wait_backoff(self) -> None:
         now = time.monotonic()
         if now < self._backoff_until:
             time.sleep(self._backoff_until - now)
-            now = time.monotonic()
-        if dtype == "noah":
-            wait = MIN_INTERVAL_NOAH_S - (now - self._last_noah_call)
-        else:
-            wait = MIN_INTERVAL_OTHER_S - (now - self._last_other_call)
-        if wait > 0:
-            LOG.debug("API-Warte %.0fs (type=%s)", wait, dtype)
-            time.sleep(wait)
 
-    def _mark_type_slot(self, dtype: str) -> None:
+    def _wait_energy_slot(self, dtype: str) -> None:
+        """Nur für queryLastData – Noah/Nexa teilen sich 1 Slot/Min."""
+        self._wait_backoff()
         now = time.monotonic()
         if dtype == "noah":
-            self._last_noah_call = now
+            wait = MIN_INTERVAL_NOAH_S - (now - self._last_noah_energy)
         else:
-            self._last_other_call = now
+            wait = MIN_INTERVAL_OTHER_S - (now - self._last_other_energy)
+        if wait > 0:
+            LOG.info("Energy-Slot warte %.0fs (type=%s, Fair-Share bei mehreren Geräten)", wait, dtype)
+            time.sleep(wait)
+
+    def _mark_energy_slot(self, dtype: str) -> None:
+        now = time.monotonic()
+        if dtype == "noah":
+            self._last_noah_energy = now
+        else:
+            self._last_other_energy = now
+
+    def _wait_aux_slot(self) -> None:
+        """Kurze Pause für DeviceInfo/WiFi – verbraucht keinen Energy-Slot."""
+        self._wait_backoff()
+        now = time.monotonic()
+        wait = MIN_INTERVAL_AUX_S - (now - self._last_aux)
+        if wait > 0:
+            time.sleep(wait)
+
+    def _mark_aux_slot(self) -> None:
+        self._last_aux = time.monotonic()
 
     def list_devices(self, page: int = 1) -> list[dict[str, Any]]:
         now = time.monotonic()
@@ -129,18 +146,16 @@ class GrowattCloudApi:
         return [r for r in rows if isinstance(r, dict)]
 
     def query_last_data(self, device_sn: str, device_type: str) -> dict[str, Any]:
-        """Rohdaten von queryLastData. device_type z.B. noah | min | inv."""
+        """Live-Messwerte. device_type z.B. noah | min."""
         dtype = self._normalize_type(device_type)
-        self._wait_type_slot(dtype)
-
+        self._wait_energy_slot(dtype)
         payload = self._request(
             "POST",
             "new-api/queryLastData",
             params={"deviceSn": device_sn, "deviceType": dtype},
         )
-        self._mark_type_slot(dtype)
+        self._mark_energy_slot(dtype)
         self._last_energy[f"{dtype}:{device_sn}"] = time.monotonic()
-
         return self._unwrap_device_block(payload, dtype)
 
     @staticmethod
@@ -168,34 +183,34 @@ class GrowattCloudApi:
         return {}
 
     def query_device_info(self, device_sn: str, device_type: str, min_interval_s: float = 300.0) -> dict[str, Any]:
-        """Geräte-Details (Firmware, Limits, Zeitfenster, …). Rate limit ~5 Min."""
+        """Details (Firmware, …). Cache ~5 Min – kein Energy-Slot."""
         dtype = self._normalize_type(device_type)
         key = f"{dtype}:{device_sn}"
         now = time.monotonic()
         last = self._last_info.get(key, 0.0)
         if key in self._info_cache and (now - last) < min_interval_s:
             return self._info_cache[key]
-        self._wait_type_slot(dtype)
+        self._wait_aux_slot()
         payload = self._request(
             "POST",
             "new-api/queryDeviceInfo",
             params={"deviceSn": device_sn, "deviceType": dtype},
         )
-        self._mark_type_slot(dtype)
+        self._mark_aux_slot()
         self._last_info[key] = time.monotonic()
         info = self._unwrap_device_block(payload, dtype)
         self._info_cache[key] = info
         return info
 
     def wifi_strength(self, device_sn: str, device_type: str, min_interval_s: float = 300.0) -> float | None:
-        """WLAN-Signal in dBm. Offizielles Limit 5 s; wir cachen länger mit den Details."""
+        """WLAN dBm. Cache wie DeviceInfo – kein Energy-Slot."""
         dtype = self._normalize_type(device_type)
         key = f"{dtype}:{device_sn}"
         now = time.monotonic()
         last = self._last_wifi.get(key, 0.0)
         if key in self._wifi_cache and (now - last) < min_interval_s:
             return self._wifi_cache[key]
-        self._wait_type_slot(dtype)
+        self._wait_aux_slot()
         try:
             payload = self._request(
                 "POST",
@@ -205,9 +220,8 @@ class GrowattCloudApi:
         except GrowattApiError as exc:
             LOG.debug("WiFi %s: %s", device_sn, exc)
             return self._wifi_cache.get(key)
-        self._mark_type_slot(dtype)
+        self._mark_aux_slot()
         self._last_wifi[key] = time.monotonic()
-        # Erfolg: Signal oft in message, nicht in data
         raw = payload.get("message")
         if raw in (None, "", "SUCCESSFUL_OPERATION"):
             raw = payload.get("data")
@@ -217,4 +231,3 @@ class GrowattCloudApi:
             return self._wifi_cache.get(key)
         self._wifi_cache[key] = dbm
         return dbm
-

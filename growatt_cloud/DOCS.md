@@ -25,7 +25,7 @@ Beide laufen in der Open API unter `deviceType=noah`. Die App unterscheidet sie 
 
 | Gerät | Minimum |
 |-------|---------|
-| Noah / Nexa | 60 s |
+| Noah / Nexa | 60 s (account-weit – bei 2 Speichern ~2 Min je Gerät) |
 | MIN-WR / andere | 300 s |
 | Geräteliste | stündlich (Default) |
 
