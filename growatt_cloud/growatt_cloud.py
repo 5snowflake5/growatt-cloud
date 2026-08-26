@@ -28,7 +28,7 @@ from api import (
 )
 from mqtt_ha import HaMqtt
 
-VERSION = "0.1.0"
+VERSION = "0.1.2"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -119,6 +119,12 @@ class Bridge:
                 row.get("deviceSn") or row.get("device_sn"),
                 row.get("deviceType") or row.get("device_type"),
             )
+        # Discovery sofort, auch wenn der erste Energy-Poll noch scheitert
+        for sn, _api in self.storage_targets():
+            label = "Nexa" if self.storage_family == "nexa" else "Noah"
+            self.mqtt.ensure_storage_discovery(sn, label)
+        for sn, _api in self.inverter_targets():
+            self.mqtt.ensure_inverter_discovery(sn)
 
     def storage_targets(self) -> list[tuple[str, str]]:
         """[(sn, api_type)] – api_type immer noah für Open API."""
@@ -207,18 +213,25 @@ class Bridge:
     def run(self) -> None:
         LOG.info("growatt_cloud %s start", VERSION)
         self.mqtt.connect()
+        if not self.mqtt.wait_connected(5):
+            LOG.warning("Starte Poll-Loop trotzdem – MQTT-Reconnect läuft im Hintergrund")
         while not self.stop:
             try:
-                self.refresh_devices()
-                if not self.storage_targets() and not self.inverter_targets():
-                    LOG.warning("Keine Noah/Nexa/MIN-Geräte gefunden – Token/Plant prüfen")
+                self.refresh_devices(force=not self.devices)
+                targets_s = self.storage_targets()
+                targets_i = self.inverter_targets()
+                if not targets_s and not targets_i:
+                    LOG.warning(
+                        "Keine Noah/Nexa/MIN-Geräte – storage_sn/inverter_sn setzen oder Token/Plant prüfen"
+                    )
+                else:
+                    LOG.debug("Ziele Speicher=%s WR=%s", targets_s, targets_i)
                 self.poll_storage()
                 self.poll_inverter()
             except GrowattApiError as exc:
                 LOG.error("API: %s", exc)
             except Exception:
                 LOG.exception("Unerwarteter Fehler")
-            # kurze Schleife; echte Intervalle stecken in poll_*
             for _ in range(10):
                 if self.stop:
                     break

@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 from typing import Any
 
 LOG = logging.getLogger("growatt-cloud.mqtt")
@@ -34,36 +36,75 @@ class HaMqtt:
         self.state_prefix = state_prefix.rstrip("/") or "growatt_cloud"
         self._client = None
         self._discovery_done: set[str] = set()
+        self._connected = threading.Event()
 
     def connect(self) -> None:
         import paho.mqtt.client as mqtt
 
-        client = mqtt.Client(client_id=f"growatt-cloud-{os.getpid()}")
+        client_id = f"growatt-cloud-{os.getpid()}"
+        try:
+            client = mqtt.Client(
+                mqtt.CallbackAPIVersion.VERSION1,
+                client_id=client_id,
+            )
+        except (AttributeError, TypeError, ValueError):
+            client = mqtt.Client(client_id=client_id)
+
         if self.username:
             client.username_pw_set(self.username, self.password or None)
+
+        client.will_set(f"{self.state_prefix}/status", "offline", retain=True)
 
         def on_connect(c, _u, _f, rc, *_a):
             if rc == 0:
                 LOG.info("MQTT verbunden (%s:%s)", self.host, self.port)
                 self._discovery_done.clear()
+                c.publish(f"{self.state_prefix}/status", "online", retain=True)
+                self._connected.set()
             else:
                 LOG.error("MQTT Connect rc=%s", rc)
+                self._connected.clear()
+
+        def on_disconnect(_c, _u, rc, *_a):
+            self._connected.clear()
+            if rc != 0:
+                LOG.warning("MQTT getrennt (rc=%s) – reconnect läuft", rc)
 
         client.on_connect = on_connect
+        client.on_disconnect = on_disconnect
+        LOG.info("MQTT verbindet zu %s:%s …", self.host, self.port)
         client.connect(self.host, self.port, keepalive=60)
         client.loop_start()
         self._client = client
+        if not self._connected.wait(15):
+            LOG.error(
+                "MQTT nicht verbunden nach 15 s – Host/User/Pass prüfen "
+                "(typisch core-mosquitto, ggf. MQTT-User der Mosquitto-App)"
+            )
+
+    def wait_connected(self, timeout: float = 15.0) -> bool:
+        return self._connected.wait(timeout)
 
     def stop(self) -> None:
         if self._client:
+            try:
+                self._client.publish(f"{self.state_prefix}/status", "offline", retain=True)
+            except Exception:
+                pass
             self._client.loop_stop()
             self._client.disconnect()
             self._client = None
+        self._connected.clear()
 
     def _pub(self, topic: str, payload: str, retain: bool = True) -> None:
         if not self._client:
+            LOG.debug("MQTT publish übersprungen (kein Client): %s", topic)
             return
-        self._client.publish(topic, payload, qos=0, retain=retain)
+        if not self._connected.is_set():
+            self._connected.wait(2)
+        info = self._client.publish(topic, payload, qos=1, retain=retain)
+        if getattr(info, "rc", 0) != 0:
+            LOG.warning("MQTT publish rc=%s topic=%s", info.rc, topic)
 
     def _device(self, serial: str, name: str, model: str) -> dict[str, Any]:
         return {
@@ -78,7 +119,6 @@ class HaMqtt:
         key = f"storage:{serial}"
         if key in self._discovery_done:
             return
-        # Geräte-Name = Serial → Entity-IDs wie bei noah-mqtt (sensor.<sn>_soc)
         device = self._device(serial, serial, f"Growatt {label}")
         sensors = [
             ("soc", "SoC", "%", "battery", "measurement"),
@@ -95,7 +135,13 @@ class HaMqtt:
         ]
         self._publish_sensor_discovery(serial, device, sensors)
         self._discovery_done.add(key)
-        LOG.info("HA-Discovery %s %s", label, serial)
+        LOG.info(
+            "HA-Discovery %s %s (%s Sensoren unter homeassistant/sensor/%s/…)",
+            label,
+            serial,
+            len(sensors),
+            slug(serial),
+        )
 
     def ensure_inverter_discovery(self, serial: str) -> None:
         key = f"min:{serial}"
@@ -114,7 +160,12 @@ class HaMqtt:
         ]
         self._publish_sensor_discovery(serial, device, sensors)
         self._discovery_done.add(key)
-        LOG.info("HA-Discovery Wechselrichter %s", serial)
+        LOG.info(
+            "HA-Discovery Wechselrichter %s (%s Sensoren unter homeassistant/sensor/%s/…)",
+            serial,
+            len(sensors),
+            slug(serial),
+        )
 
     def _publish_sensor_discovery(
         self,
@@ -130,6 +181,7 @@ class HaMqtt:
             payload: dict[str, Any] = {
                 "name": name,
                 "unique_id": unique,
+                "object_id": f"{node}_{object_id}",
                 "state_topic": state_topic,
                 "device": device,
                 "availability_topic": f"{self.state_prefix}/status",
@@ -145,6 +197,9 @@ class HaMqtt:
             if device_class == "energy":
                 payload["state_class"] = "total_increasing"
             self._pub(topic, json.dumps(payload), retain=True)
+            self._pub(state_topic, "0" if unit else "unknown", retain=True)
+        self._pub(f"{self.state_prefix}/status", "online", retain=True)
+        time.sleep(0.2)
 
     def publish_states(self, serial: str, values: dict[str, Any]) -> None:
         node = slug(serial)
