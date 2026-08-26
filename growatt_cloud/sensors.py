@@ -1,11 +1,42 @@
-"""Rohdaten Growatt v4 → flache Sensor-Maps (Keys = MQTT object_id)."""
+"""Rohdaten Growatt v4 → flache Sensor-Maps (Keys = MQTT object_id).
+
+Strategie: ALLE skalaren Felder aus queryLastData (+ optional queryDeviceInfo)
+werden als Sensoren veröffentlicht. Zusätzlich bleiben freundliche Aliase
+(soc, solar_power, …) für Dashboards und Abwärtskompatibilität.
+"""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 WORK_MODE = {0: "load_first", 1: "battery_first", 2: "smart"}
 CHARGE_STATUS = {0: "idle", 1: "charging", 2: "discharging"}
+
+# Keine eigenen Entities (IDs / verschachtelte Blobs)
+_SKIP_KEYS = {
+    "device_sn",
+    "datalogger_sn",
+    "serial_num",
+    "bat_sn",
+    "battery_sn",
+    "plant_id",
+    "address",
+    "tlx_bean",
+    "inv_set_bean",
+    "record",
+    "children",
+    "optimizer_list",
+    "energy_day_map",
+    "family",
+    "label",
+}
+
+
+def _camel_to_snake(name: str) -> str:
+    text = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", text)
+    return text.replace("-", "_").lower()
 
 
 def _num(data: dict[str, Any], *keys: str, default: float | None = 0.0) -> float | None:
@@ -46,8 +77,47 @@ def detect_storage_label(raw: dict[str, Any]) -> str:
     return "Nexa" if "nexa" in blob else "Noah"
 
 
-def normalize_storage(raw: dict[str, Any]) -> dict[str, Any]:
-    """Noah/Nexa – Parität zu noah-mqtt + sinnvolle v4-Extras."""
+def flatten_raw(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Alle skalaren API-Keys → snake_case Sensorwerte."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for key, value in raw.items():
+        if value is None or value == "":
+            continue
+        if isinstance(value, (dict, list)):
+            continue
+        snake = _camel_to_snake(str(key))
+        if snake in _SKIP_KEYS or snake.startswith("_"):
+            continue
+        if isinstance(value, bool):
+            out[snake] = "ON" if value else "OFF"
+            continue
+        if isinstance(value, (int, float)):
+            out[snake] = value
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        # numerische Strings als Zahl (HA mag das für Charts)
+        try:
+            if re.fullmatch(r"-?\d+", text):
+                out[snake] = int(text)
+                continue
+            if re.fullmatch(r"-?\d+\.\d+", text):
+                out[snake] = float(text)
+                continue
+        except ValueError:
+            pass
+        low = text.lower()
+        if low in ("true", "false"):
+            out[snake] = "ON" if low == "true" else "OFF"
+            continue
+        out[snake] = text
+    return out
+
+
+def _curated_storage(raw: dict[str, Any]) -> dict[str, Any]:
     bat = _num(raw, "totalBatteryPackChargingPower", "total_battery_pack_charging_power") or 0.0
     status = _int(raw, "totalBatteryPackChargingStatus", "total_battery_pack_charging_status")
     if status == 1:
@@ -63,11 +133,12 @@ def normalize_storage(raw: dict[str, Any]) -> dict[str, Any]:
     packs = max(1, min(packs, 4))
     work = _int(raw, "workMode", "work_mode")
     heating = _int(raw, "heatingStatus", "heating_status")
+    lost = raw.get("lost") in (True, 1, "1", "true", "True")
 
     out: dict[str, Any] = {
         "family": label.lower(),
         "label": label,
-        "soc": _num(raw, "totalBatteryPackSoc", "total_battery_pack_soc"),
+        "soc": _num(raw, "totalBatteryPackSoc", "total_battery_pack_soc", "soc"),
         "solar_power": _num(raw, "ppv"),
         "output_power": abs(_num(raw, "pac") or 0.0),
         "charging_power": charge_w,
@@ -82,8 +153,12 @@ def normalize_storage(raw: dict[str, Any]) -> dict[str, Any]:
         "household_load": _num(raw, "totalHouseholdLoad", "total_household_load"),
         "on_grid_power": _num(raw, "onGridPower", "on_grid_power"),
         "off_grid_power": _num(raw, "offGridPower", "off_grid_power"),
-        "charge_soc_limit": _num(raw, "chargeSocLimit", "charge_soc_limit"),
-        "discharge_soc_limit": _num(raw, "dischargeSocLimit", "discharge_soc_limit"),
+        "charge_soc_limit": _num(
+            raw, "chargeSocLimit", "charge_soc_limit", "chargingSocHighLimit", "charging_soc_high_limit"
+        ),
+        "discharge_soc_limit": _num(
+            raw, "dischargeSocLimit", "discharge_soc_limit", "chargingSocLowLimit", "charging_soc_low_limit"
+        ),
         "battery_soh": _num(raw, "batterySoh", "battery_soh"),
         "battery_cycles": _num(raw, "batteryCycles", "battery_cycles"),
         "work_mode": WORK_MODE.get(work, str(work)),
@@ -91,8 +166,8 @@ def normalize_storage(raw: dict[str, Any]) -> dict[str, Any]:
         "charge_status": CHARGE_STATUS.get(status, str(status)),
         "status_code": _int(raw, "status"),
         "heating": "ON" if heating else "OFF",
-        "connectivity": "ON",
-        "time": _pick(raw, "timeStr", "time_str", "time"),
+        "connectivity": "OFF" if lost else "ON",
+        "last_update": _pick(raw, "timeStr", "time_str", "time", "lastUpdateTimeText", "last_update_time_text"),
     }
 
     for i in range(1, 5):
@@ -115,14 +190,15 @@ def normalize_storage(raw: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def normalize_min(raw: dict[str, Any]) -> dict[str, Any]:
-    """MIN/TLX-Wechselrichter – praxisnahe Menge (~Growatt-Server-Kernfelder)."""
+def _curated_min(raw: dict[str, Any]) -> dict[str, Any]:
     status = _pick(raw, "statusText", "status_text", "status")
     return {
         "family": "min",
         "label": "Wechselrichter",
         "ac_power": _num(raw, "pac"),
         "ac_power_r": _num(raw, "pac1", "pacr"),
+        "ac_power_s": _num(raw, "pac2"),
+        "ac_power_t": _num(raw, "pac3"),
         "energy_today": _num(raw, "eacToday", "eac_today", "powerToday", "power_today"),
         "energy_total": _num(raw, "eacTotal", "eac_total", "powerTotal", "power_total"),
         "energy_today_input_1": _num(raw, "epv1Today", "epv1_today"),
@@ -131,6 +207,8 @@ def normalize_min(raw: dict[str, Any]) -> dict[str, Any]:
         "energy_today_input_4": _num(raw, "epv4Today", "epv4_today"),
         "energy_total_input_1": _num(raw, "epv1Total", "epv1_total"),
         "energy_total_input_2": _num(raw, "epv2Total", "epv2_total"),
+        "energy_total_input_3": _num(raw, "epv3Total", "epv3_total"),
+        "energy_total_input_4": _num(raw, "epv4Total", "epv4_total"),
         "energy_total_pv": _num(raw, "epvTotal", "epv_total"),
         "ppv": _num(raw, "ppv"),
         "ppv1": _num(raw, "ppv1"),
@@ -139,13 +217,24 @@ def normalize_min(raw: dict[str, Any]) -> dict[str, Any]:
         "ppv4": _num(raw, "ppv4"),
         "ipv1": _num(raw, "ipv1"),
         "ipv2": _num(raw, "ipv2"),
+        "ipv3": _num(raw, "ipv3"),
+        "ipv4": _num(raw, "ipv4"),
         "vpv1": _num(raw, "vpv1"),
         "vpv2": _num(raw, "vpv2"),
+        "vpv3": _num(raw, "vpv3"),
+        "vpv4": _num(raw, "vpv4"),
         "vac1": _num(raw, "vac1", "vacr"),
+        "vac2": _num(raw, "vac2"),
+        "vac3": _num(raw, "vac3"),
         "iac1": _num(raw, "iac1", "iacr"),
+        "iac2": _num(raw, "iac2"),
+        "iac3": _num(raw, "iac3"),
         "fac": _num(raw, "fac"),
         "temperature": _num(raw, "temp1", "temperature"),
         "temperature_2": _num(raw, "temp2"),
+        "temperature_3": _num(raw, "temp3"),
+        "temperature_4": _num(raw, "temp4"),
+        "temperature_5": _num(raw, "temp5"),
         "pf": _num(raw, "pf"),
         "export_power": _num(raw, "pacToGridTotal", "pac_to_grid_total"),
         "import_power": _num(raw, "pacToUserTotal", "pac_to_user_total"),
@@ -158,6 +247,35 @@ def normalize_min(raw: dict[str, Any]) -> dict[str, Any]:
         "energy_local_load_total": _num(raw, "eLocalLoadTotal", "e_local_load_total"),
         "status": status if status is not None else "unknown",
         "status_code": _int(raw, "status") if isinstance(_pick(raw, "status"), (int, float, str)) else 0,
-        "connectivity": "OFF" if raw.get("lost") in (True, 1, "1", "true") else "ON",
-        "time": _pick(raw, "time", "timeStr", "time_str"),
+        "connectivity": "OFF" if raw.get("lost") in (True, 1, "1", "true", "True") else "ON",
+        "last_update": _pick(raw, "time", "timeStr", "time_str"),
     }
+
+
+def merge_device_values(
+    energy: dict[str, Any],
+    info: dict[str, Any] | None = None,
+    *,
+    kind: str,
+    wifi_dbm: float | None = None,
+) -> dict[str, Any]:
+    """info (Details) + energy (LastData) + freundliche Aliase + optional WLAN."""
+    combined = {**(info or {}), **(energy or {})}
+    flat = {**flatten_raw(info), **flatten_raw(energy)}
+    if kind == "storage":
+        curated = _curated_storage(combined)
+    else:
+        curated = _curated_min(combined)
+    out = {**flat, **curated}
+    if wifi_dbm is not None:
+        out["wifi_signal"] = wifi_dbm
+    return out
+
+
+# Rückwärtskompatible Namen
+def normalize_storage(raw: dict[str, Any], info: dict[str, Any] | None = None) -> dict[str, Any]:
+    return merge_device_values(raw, info, kind="storage")
+
+
+def normalize_min(raw: dict[str, Any], info: dict[str, Any] | None = None) -> dict[str, Any]:
+    return merge_device_values(raw, info, kind="min")
