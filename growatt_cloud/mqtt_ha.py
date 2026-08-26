@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from discovery_purge import STALE_DISCOVERY_KEYS
+from sensors import PROTECTED_DISCOVERY_KEYS
 
 LOG = logging.getLogger("growatt-cloud.mqtt")
 
@@ -43,14 +44,14 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "connectivity": ("Connectivity", None, "connectivity", None, "binary_sensor"),
     "wifi_signal": ("WiFi Signal", "dBm", "signal_strength", "measurement", "sensor"),
     "last_update": ("Last Update", None, "timestamp", None, "sensor"),
-    "battery1_soc": ("Battery 1 SoC", "%", "battery", "measurement", "sensor"),
-    "battery1_temp": ("Battery 1 Temperature", "°C", "temperature", "measurement", "sensor"),
-    "battery2_soc": ("Battery 2 SoC", "%", "battery", "measurement", "sensor"),
-    "battery2_temp": ("Battery 2 Temperature", "°C", "temperature", "measurement", "sensor"),
-    "battery3_soc": ("Battery 3 SoC", "%", "battery", "measurement", "sensor"),
-    "battery3_temp": ("Battery 3 Temperature", "°C", "temperature", "measurement", "sensor"),
-    "battery4_soc": ("Battery 4 SoC", "%", "battery", "measurement", "sensor"),
-    "battery4_temp": ("Battery 4 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "battery1_soc": ("Battery 1 SoC (Tower 1)", "%", "battery", "measurement", "sensor"),
+    "battery1_temp": ("Battery 1 Temperature (Tower 1)", "°C", "temperature", "measurement", "sensor"),
+    "battery2_soc": ("Battery 2 SoC (Tower 2)", "%", "battery", "measurement", "sensor"),
+    "battery2_temp": ("Battery 2 Temperature (Tower 2)", "°C", "temperature", "measurement", "sensor"),
+    "battery3_soc": ("Battery 3 SoC (Tower 3)", "%", "battery", "measurement", "sensor"),
+    "battery3_temp": ("Battery 3 Temperature (Tower 3)", "°C", "temperature", "measurement", "sensor"),
+    "battery4_soc": ("Battery 4 SoC (Tower 4)", "%", "battery", "measurement", "sensor"),
+    "battery4_temp": ("Battery 4 Temperature (Tower 4)", "°C", "temperature", "measurement", "sensor"),
     "pv1_power": ("PV1 Power (Tower 1)", "W", "power", "measurement", "sensor"),
     "pv1_voltage": ("PV1 Voltage (Tower 1)", "V", "voltage", "measurement", "sensor"),
     "pv1_current": ("PV1 Current (Tower 1)", "A", "current", "measurement", "sensor"),
@@ -67,6 +68,10 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "pv2_temp": ("PV2 Temperature (Tower 1)", "°C", "temperature", "measurement", "sensor"),
     "pv3_temp": ("PV3 Temperature (Tower 2)", "°C", "temperature", "measurement", "sensor"),
     "pv4_temp": ("PV4 Temperature (Tower 2)", "°C", "temperature", "measurement", "sensor"),
+    "solar_power_tower1": ("Solar Power Tower 1", "W", "power", "measurement", "sensor"),
+    "solar_power_tower2": ("Solar Power Tower 2", "W", "power", "measurement", "sensor"),
+    "generation_today_tower1": ("Generation Today Tower 1", "kWh", "energy", "total_increasing", "sensor"),
+    "generation_today_tower2": ("Generation Today Tower 2", "kWh", "energy", "total_increasing", "sensor"),
     "ac_power": ("AC Power", "W", "power", "measurement", "sensor"),
     "ac_power_r": ("AC Power R", "W", "power", "measurement", "sensor"),
     "ac_power_s": ("AC Power S", "W", "power", "measurement", "sensor"),
@@ -372,7 +377,10 @@ class HaMqtt:
         self._subscribe_purge(node)
 
         old_keys = self._discovery_keys.get(serial) or set()
-        stale = (old_keys | set(STALE_DISCOVERY_KEYS)) - new_keys
+        # Nur wirklich entfernte Keys + Junk, nie aktuelle useful/Tower-Sensoren
+        stale = old_keys - new_keys
+        if serial not in self._stale_purged:
+            stale |= set(STALE_DISCOVERY_KEYS) - new_keys - set(PROTECTED_DISCOVERY_KEYS)
         need_publish = self._discovery_sig.get(serial) != sig
         need_purge = serial not in self._stale_purged or need_publish
 

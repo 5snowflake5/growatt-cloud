@@ -4,6 +4,17 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.18] – 2026-08-26
+
+### Fixed
+- MQTT-Purge hat gültige Entities (`battery2`, PV3/PV4) mitgelöscht – Turm‑2 bleibt.
+- Pack-Anzahl wird „klebrig“ (nie unter den höchsten gesehenen Wert fallen).
+
+### Added
+- **Solar Power Tower 1/2** (PV1+2 bzw. PV3+4).
+- **Generation Today Tower 1/2** (kWh): Growatt liefert keine Split-kWh → Integration aus Live-PV, lokal persistiert.
+- Battery-Sensoren klar als Tower 1/2 benannt.
+
 ## [0.1.17] – 2026-08-26
 
 ### Fixed
