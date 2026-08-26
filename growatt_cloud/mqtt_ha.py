@@ -204,6 +204,28 @@ class HaMqtt:
         self._discovery_sig: dict[str, str] = {}
         self._discovery_keys: dict[str, set[str]] = {}
         self._connected = threading.Event()
+        self._keys_path = "/data/growatt_discovery_keys.json"
+        self._load_discovery_keys()
+
+    def _load_discovery_keys(self) -> None:
+        try:
+            if not os.path.isfile(self._keys_path):
+                return
+            with open(self._keys_path, encoding="utf-8") as fh:
+                raw = json.load(fh)
+            if isinstance(raw, dict):
+                self._discovery_keys = {k: set(v) for k, v in raw.items() if isinstance(v, list)}
+        except Exception:
+            self._discovery_keys = {}
+
+    def _save_discovery_keys(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(self._keys_path), exist_ok=True)
+            payload = {k: sorted(v) for k, v in self._discovery_keys.items()}
+            with open(self._keys_path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh)
+        except Exception as exc:
+            LOG.debug("Discovery-Keys speichern: %s", exc)
 
     def connect(self) -> None:
         import paho.mqtt.client as mqtt
@@ -341,6 +363,7 @@ class HaMqtt:
             count += 1
         self._discovery_sig[serial] = sig
         self._discovery_keys[serial] = new_keys
+        self._save_discovery_keys()
         self._pub(f"{self.state_prefix}/status", "online", retain=True)
         LOG.info("HA-Discovery %s (%s) %s → %s Entities", label, device_name, serial, count)
         time.sleep(0.15)

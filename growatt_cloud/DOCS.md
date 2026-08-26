@@ -31,8 +31,8 @@ Beide laufen in der Open API unter `deviceType=noah`. Die App unterscheidet sie 
 
 Option `sensor_mode`:
 
-- **`useful`** (Default): nur sinnvolle Live-Werte – SoC, Leistungen, Energien, Packs, PV-Strings die aktiv sind, Limits, Status, WiFi, Firmware. Keine Duplikate, keine leeren „Unbekannt“-Felder, keine Zeitfenster-Config, keine °F-Doppelungen.
-- **`full`**: möglichst alle API-Felder, aber ohne offensichtliche Duplikate/Müll (Epoch-ms, leere Serials, …).
+- **`useful`** (Default): schlanke Live-Sensoren. Beim MIN-WR u. a. ohne BMS/BDC/EPS-Nullfelder, ohne Einphasen-S/T, ohne Duplikate (Pac/Eac/Epv…).
+- **`full`**: mehr Felder, aber weiterhin bereinigt (kein Balkon-„Wahnsinn“ mit 200 Null-Sensoren).
 
 Nach dem Wechsel ggf. App neu starten. Entfernte Entities werden per MQTT Discovery zurückgezogen; falls Reste bleiben: Gerät in HA einmal löschen.
 
