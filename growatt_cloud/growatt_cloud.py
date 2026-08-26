@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.19"
+VERSION = "0.1.20"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 TOWER_ENERGY_PATH = "/data/growatt_tower_energy.json"
 LOG = logging.getLogger("growatt-cloud")
@@ -233,18 +233,16 @@ class Bridge:
                 self._last_storage[sn] = time.monotonic()
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
-                    "%s %s SoC=%s%% PV=%.0fW T1=%.0fW T2=%.0fW (1=%.0f 2=%.0f 3=%.0f 4=%.0f) "
-                    "Out=%.0fW Today=%.2fkWh T1=%.2f T2=%.2fkWh packs=%s bat2=%s%% mode=%s entities=%s",
+                    "%s %s SoC=%s%% PV=%.0fW S1=%.0fW (PV1=%.0f PV2=%.0f) S2=%.0fW(Rest) "
+                    "Out=%.0fW Today=%.2fkWh S1=%.2f S2=%.2fkWh packs=%s bat2=%s%% mode=%s entities=%s",
                     values["label"],
                     sn,
                     values.get("soc"),
                     values.get("solar_power") or 0,
                     values.get("solar_power_tower1") or 0,
-                    values.get("solar_power_tower2") or 0,
                     values.get("pv1_power") or 0,
                     values.get("pv2_power") or 0,
-                    values.get("pv3_power") or 0,
-                    values.get("pv4_power") or 0,
+                    values.get("solar_power_tower2") or 0,
                     values.get("output_power") or 0,
                     values.get("generation_today") or 0,
                     values.get("generation_today_tower1") or 0,
