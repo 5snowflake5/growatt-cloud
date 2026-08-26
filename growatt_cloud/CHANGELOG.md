@@ -4,6 +4,10 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.24] – 2026-08-26
+
+### Changed
+- Stable gc_ Entity-IDs + Release erst nach GHCR-Image (kein Update-Race).
 ## [0.1.23] – 2026-08-26
 
 ### Fixed
