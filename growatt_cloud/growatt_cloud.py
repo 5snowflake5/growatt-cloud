@@ -28,7 +28,7 @@ from api import (
 )
 from mqtt_ha import HaMqtt
 
-VERSION = "0.1.2"
+VERSION = "0.1.3"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -153,6 +153,14 @@ class Bridge:
                 out.append((sn, api_type))
         return out
 
+    def ensure_discovery_for_targets(self) -> None:
+        """Discovery sofort bei bekannter SN – nicht erst nach erfolgreichem Energy-Poll."""
+        label = "Nexa" if self.storage_family == "nexa" else "Noah"
+        for sn, _api in self.storage_targets():
+            self.mqtt.ensure_storage_discovery(sn, label)
+        for sn, _api in self.inverter_targets():
+            self.mqtt.ensure_inverter_discovery(sn)
+
     def poll_storage(self) -> None:
         now = time.monotonic()
         for sn, api_type in self.storage_targets():
@@ -225,6 +233,7 @@ class Bridge:
                         "Keine Noah/Nexa/MIN-Geräte – storage_sn/inverter_sn setzen oder Token/Plant prüfen"
                     )
                 else:
+                    self.ensure_discovery_for_targets()
                     LOG.debug("Ziele Speicher=%s WR=%s", targets_s, targets_i)
                 self.poll_storage()
                 self.poll_inverter()
