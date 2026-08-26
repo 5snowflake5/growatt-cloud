@@ -4,6 +4,15 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.15] – 2026-08-26
+
+### Fixed
+- Noah/Nexa: PV1–PV4 bleiben immer sichtbar (auch 0 W) – wurden vorher als „inaktiv“ entfernt.
+- Stack mit mehreren Batterie-Türmen im Gerätenamen erkennbar (`Noah 2T …`).
+
+### Note
+- Der zweite Batterie-Turm hat in der Growatt-API **keine eigenen PV-Werte** – nur Battery 2 SoC/Temp. PV ist systemweit (Solar Power + PV1–4).
+
 ## [0.1.14] – 2026-08-26
 
 ### Changed
