@@ -1,13 +1,18 @@
 # Growatt Cloud – Auswertung (Sections-View)
-# Dashboard → ⋮ → Rohkonfiguration → Inhalt unter `views:` ersetzen.
 #
-# Entity-IDs ab Addon 0.1.23 (Präfix gc_):
-#   Noah  → sensor.gc_0pvp00ed26ut03e9_*
-#   Nexa  → sensor.gc_0hvrd0zr247t000v_*
-#   WR    → sensor.gc_bzp4nxx18c_*
+# Entity-IDs ab Addon 0.1.25 (stabil, aus Sensor-Keys – nicht aus Anzeigenamen):
+#   sensor.gc_<serial_klein>_<key>
 #
-# Vorher in Entwicklerwerkzeuge → Zustände nach „gc_0pvp“ suchen.
-# Wenn noch ohne gc_: Addon auf 0.1.23 updaten und einmal neu starten.
+# Noah  0PVP00ED26UT03E9 → sensor.gc_0pvp00ed26ut03e9_*
+# Nexa  0HVRD0ZR247T000V → sensor.gc_0hvrd0zr247t000v_*
+# WR    BZP4NXX18C       → sensor.gc_bzp4nxx18c_*
+#
+# Nach Update 0.1.25:
+# 1) Alte MQTT-Geräte Noah/Nexa/WR einmal löschen (die mit …_output_power_2 usw.)
+# 2) Growatt-Cloud-Addon neu starten
+# 3) In Zuständen nach „gc_0pvp“ suchen – dann diese View pasten
+#
+# Dashboard → ⋮ → Rohkonfiguration → unter `views:` ersetzen.
 
 views:
   - type: sections

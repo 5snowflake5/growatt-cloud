@@ -308,11 +308,13 @@ class HaMqtt:
             parts = msg.topic.split("/")
             if len(parts) < 5 or parts[-1] != "config":
                 return
-            component, node, object_id = parts[-4], parts[-3], parts[-2]
+            component, node, disc_oid = parts[-4], parts[-3], parts[-2]
             if component not in ("sensor", "binary_sensor"):
                 return
             wanted = self._wanted_by_node.get(node)
-            if wanted is None or object_id in wanted or not msg.payload:
+            # Discovery-Topic nutzt gc_<key>; wanted enthält die Roh-Keys
+            key = disc_oid[3:] if disc_oid.startswith("gc_") else disc_oid
+            if wanted is None or key in wanted or disc_oid in wanted or not msg.payload:
                 return
             LOG.info("Entferne veraltete Discovery: %s", msg.topic)
             self._pub(msg.topic, "", retain=True)
@@ -362,9 +364,18 @@ class HaMqtt:
             "serial_number": serial,
         }
 
-    def _clear_discovery(self, node: str, object_id: str) -> None:
+    def _clear_discovery_config(self, node: str, object_id: str) -> None:
+        """Retained Discovery-Configs löschen (alt + neu), State-Topics bleiben."""
         for component in ("sensor", "binary_sensor"):
-            self._pub(f"{self.discovery_prefix}/{component}/{node}/{object_id}/config", "", retain=True)
+            for oid in (object_id, f"gc_{object_id}"):
+                self._pub(
+                    f"{self.discovery_prefix}/{component}/{node}/{oid}/config",
+                    "",
+                    retain=True,
+                )
+
+    def _clear_discovery(self, node: str, object_id: str) -> None:
+        self._clear_discovery_config(node, object_id)
         self._pub(f"{self.state_prefix}/{node}/{object_id}", "", retain=True)
 
     def _subscribe_purge(self, node: str) -> None:
@@ -385,7 +396,9 @@ class HaMqtt:
         if values.get("device_name") and label_clean.lower() in str(values.get("device_name")).lower():
             device_name = str(values["device_name"])
         model = f"Growatt {label_clean}"
-        sig = f"v3|{self.sensor_mode}|{device_name}|{model}|{'|'.join(keys)}"
+        # v5: neue unique_id + Discovery-Topic → HA legt Entity-IDs neu an
+        # (alte growatt_cloud_* unique_ids hatten Name-Slug/Kollisionen wie output_power_2)
+        sig = f"v5|{self.sensor_mode}|{device_name}|{model}|{'|'.join(keys)}"
         node = slug(serial)
         new_keys = set(keys)
         self._wanted_by_node[node] = new_keys
@@ -411,6 +424,12 @@ class HaMqtt:
             self._purge_fake_tower_devices(serial)
             return
 
+        # Alte Discovery (Topic ohne gc_ + alte unique_id) zuerst weg, sonst behält HA
+        # die kaputten Entity-IDs (…_output_power_2 usw.).
+        for object_id in sorted(new_keys | old_keys):
+            self._clear_discovery_config(node, object_id)
+        time.sleep(0.4)
+
         device = self._device(serial, device_name, model)
         count = 0
         for object_id in keys:
@@ -426,16 +445,18 @@ class HaMqtt:
                     "shelly_flag",
                 ) or object_id.endswith("_enable"):
                     component = "binary_sensor"
-            unique = f"growatt_cloud_{node}_{object_id}"
-            # Entity-ID nie mit Ziffer starten (HA slugifiziert sonst unzuverlässig)
+            # unique_id NEU (gc_…) → HA erstellt Entities frisch mit default_entity_id
             ha_oid = f"gc_{node}_{object_id}"
-            topic = f"{self.discovery_prefix}/{component}/{node}/{object_id}/config"
+            unique = ha_oid
+            disc_oid = f"gc_{object_id}"
+            topic = f"{self.discovery_prefix}/{component}/{node}/{disc_oid}/config"
             state_topic = f"{self.state_prefix}/{node}/{object_id}"
+            entity_id = f"{component}.{ha_oid}"
             payload: dict[str, Any] = {
                 "name": name,
                 "unique_id": unique,
                 "object_id": ha_oid,
-                "default_entity_id": f"{component}.{ha_oid}",
+                "default_entity_id": entity_id,
                 "state_topic": state_topic,
                 "device": device,
                 "availability_topic": f"{self.state_prefix}/status",
@@ -463,12 +484,13 @@ class HaMqtt:
         self._save_discovery_keys()
         self._pub(f"{self.state_prefix}/status", "online", retain=True)
         LOG.info(
-            "HA-Discovery %s (%s) %s mode=%s → %s Entities",
+            "HA-Discovery %s (%s) %s mode=%s → %s Entities (IDs gc_%s_<key>)",
             label,
             device_name,
             serial,
             self.sensor_mode,
             count,
+            node,
         )
         self._purge_fake_tower_devices(serial)
         time.sleep(0.25)
