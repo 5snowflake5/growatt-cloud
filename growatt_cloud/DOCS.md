@@ -34,7 +34,11 @@ Option `sensor_mode`:
 - **`useful`** (Default): schlanke Live-Sensoren. Beim MIN-WR u. a. ohne BMS/BDC/EPS-Nullfelder, ohne Einphasen-S/T, ohne Duplikate (Pac/Eac/Epv…).
 - **`full`**: mehr Felder, aber weiterhin bereinigt (kein Balkon-„Wahnsinn“ mit 200 Null-Sensoren).
 
-Nach dem Wechsel ggf. App neu starten. Entfernte Entities werden per MQTT Discovery zurückgezogen; falls Reste bleiben: Gerät in HA einmal löschen.
+Nach dem Update App **neu starten**. Im Log sollte stehen:
+`HA-Discovery-Purge … Alt-Entities entfernt` und `mode=useful → ~30 Entities`.
+
+Falls in HA trotzdem Alt-Entities bleiben: Gerät einmal löschen
+(Einstellungen → Geräte → Growatt … → löschen), App neu starten.
 
 ## Geräte
 

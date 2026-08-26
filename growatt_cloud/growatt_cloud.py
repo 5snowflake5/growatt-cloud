@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.8"
+VERSION = "0.1.9"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -93,6 +93,7 @@ class Bridge:
             password=str(env_or(opts, "mqtt_password", "")),
             discovery_prefix=str(env_or(opts, "mqtt_discovery_prefix", "homeassistant")),
             state_prefix=str(env_or(opts, "mqtt_state_prefix", "growatt_cloud")),
+            sensor_mode=self.sensor_mode,
         )
 
         self.devices: list[dict[str, Any]] = []

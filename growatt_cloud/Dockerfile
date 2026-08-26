@@ -9,6 +9,7 @@ RUN apk add --no-cache \
 COPY api.py /app/api.py
 COPY sensors.py /app/sensors.py
 COPY mqtt_ha.py /app/mqtt_ha.py
+COPY discovery_purge.py /app/discovery_purge.py
 COPY growatt_cloud.py /app/growatt_cloud.py
 
 ENV PYTHONUNBUFFERED=1
