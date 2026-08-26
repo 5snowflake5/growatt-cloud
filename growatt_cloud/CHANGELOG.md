@@ -4,6 +4,11 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.10] – 2026-08-26
+
+### Fixed
+- Crash `AttributeError: 'dict' object has no attribute 'add'` beim Discovery-Purge (`_subscribed_nodes` war versehentlich ein Dict).
+
 ## [0.1.9] – 2026-08-26
 
 ### Fixed
