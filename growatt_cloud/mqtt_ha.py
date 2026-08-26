@@ -218,7 +218,7 @@ class HaMqtt:
         self._discovery_sig: dict[str, str] = {}
         self._discovery_keys: dict[str, set[str]] = {}
         self._wanted_by_node: dict[str, set[str]] = {}
-        self._subscribed_nodes: set[str] = {}
+        self._subscribed_nodes: set[str] = set()
         self._stale_purged: set[str] = set()
         self._connected = threading.Event()
         self._keys_path = "/data/growatt_discovery_keys.json"
