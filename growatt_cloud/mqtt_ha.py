@@ -115,7 +115,8 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "status": ("Status", None, None, None, "sensor"),
 }
 
-_META_SKIP = {"family", "label", "time"}
+_META_SKIP = {"family", "label", "time", "device_name"}
+
 
 
 def slug(value: str) -> str:
@@ -282,10 +283,12 @@ class HaMqtt:
     def ensure_discovery(self, serial: str, label: str, values: dict[str, Any]) -> None:
         """Discovery für alle vorhandenen Werte – inkl. neuer API-Felder ohne Whitelist."""
         keys = sorted(k for k in values if k not in _META_SKIP and values[k] is not None)
-        sig = f"{label}|{'|'.join(keys)}"
+        device_name = str(values.get("device_name") or values.get("alias") or serial)
+        model = str(values.get("model") or f"Growatt {label}")
+        sig = f"{device_name}|{model}|{'|'.join(keys)}"
         if self._discovery_sig.get(serial) == sig:
             return
-        device = self._device(serial, serial, f"Growatt {label}")
+        device = self._device(serial, device_name, model)
         node = slug(serial)
         count = 0
         for object_id in keys:
@@ -330,7 +333,7 @@ class HaMqtt:
             count += 1
         self._discovery_sig[serial] = sig
         self._pub(f"{self.state_prefix}/status", "online", retain=True)
-        LOG.info("HA-Discovery %s %s → %s Entities", label, serial, count)
+        LOG.info("HA-Discovery %s (%s) %s → %s Entities", label, device_name, serial, count)
         time.sleep(0.15)
 
     def ensure_storage_discovery(self, serial: str, label: str) -> None:
