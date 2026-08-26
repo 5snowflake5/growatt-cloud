@@ -385,7 +385,7 @@ class HaMqtt:
         if values.get("device_name") and label_clean.lower() in str(values.get("device_name")).lower():
             device_name = str(values["device_name"])
         model = f"Growatt {label_clean}"
-        sig = f"v2|{self.sensor_mode}|{device_name}|{model}|{'|'.join(keys)}"
+        sig = f"v3|{self.sensor_mode}|{device_name}|{model}|{'|'.join(keys)}"
         node = slug(serial)
         new_keys = set(keys)
         self._wanted_by_node[node] = new_keys
@@ -427,12 +427,15 @@ class HaMqtt:
                 ) or object_id.endswith("_enable"):
                     component = "binary_sensor"
             unique = f"growatt_cloud_{node}_{object_id}"
+            # Entity-ID nie mit Ziffer starten (HA slugifiziert sonst unzuverlässig)
+            ha_oid = f"gc_{node}_{object_id}"
             topic = f"{self.discovery_prefix}/{component}/{node}/{object_id}/config"
             state_topic = f"{self.state_prefix}/{node}/{object_id}"
             payload: dict[str, Any] = {
                 "name": name,
                 "unique_id": unique,
-                "object_id": f"{node}_{object_id}",
+                "object_id": ha_oid,
+                "default_entity_id": f"{component}.{ha_oid}",
                 "state_topic": state_topic,
                 "device": device,
                 "availability_topic": f"{self.state_prefix}/status",
