@@ -1,0 +1,267 @@
+# Growatt Cloud – Auswertung (Sections-View)
+# Dashboard → ⋮ → Rohkonfiguration → Inhalt unter `views:` ersetzen.
+#
+# Geräte (growatt_cloud MQTT):
+#   Noah  0PVP00ED26UT03E9  → sensor.0pvp00ed26ut03e9_*
+#   Nexa  0HVRD0ZR247T000V  → sensor.0hvrd0zr247t000v_*
+#   WR    BZP4NXX18C        → sensor.bzp4nxx18c_*
+# Speicher-2-PV = Solar − PV1 − PV2 (solar_power_tower2)
+
+views:
+  - type: sections
+    title: Solar Auswertung
+    path: solar-auswertung
+    max_columns: 4
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Noah – jetzt
+            heading_style: title
+          - type: gauge
+            entity: sensor.0pvp00ed26ut03e9_soc
+            name: SoC gesamt
+            min: 0
+            max: 100
+            needle: true
+            severity:
+              red: 0
+              yellow: 20
+              green: 40
+          - type: gauge
+            entity: sensor.0pvp00ed26ut03e9_battery1_soc
+            name: Batterie 1
+            min: 0
+            max: 100
+            needle: true
+          - type: gauge
+            entity: sensor.0pvp00ed26ut03e9_battery2_soc
+            name: Batterie 2
+            min: 0
+            max: 100
+            needle: true
+          - type: entities
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_solar_power
+                name: Solar gesamt
+              - entity: sensor.0pvp00ed26ut03e9_solar_power_tower1
+                name: Solar Speicher 1 (PV1+PV2)
+              - entity: sensor.0pvp00ed26ut03e9_solar_power_tower2
+                name: Solar Speicher 2 (Rest)
+              - entity: sensor.0pvp00ed26ut03e9_output_power
+                name: Abgabe
+              - entity: sensor.0pvp00ed26ut03e9_charging_power
+                name: Laden
+              - entity: sensor.0pvp00ed26ut03e9_discharge_power
+                name: Entladen
+        column_span: 2
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Heute (kWh)
+            heading_style: title
+          - type: markdown
+            content: |
+              {% set total = states('sensor.0pvp00ed26ut03e9_generation_today') | float(0) %}
+              {% set s1 = states('sensor.0pvp00ed26ut03e9_generation_today_tower1') | float(0) %}
+              {% set s2 = states('sensor.0pvp00ed26ut03e9_generation_today_tower2') | float(0) %}
+              {% set sum = s1 + s2 %}
+              {% set live = states('sensor.0pvp00ed26ut03e9_solar_power') | float(0) %}
+              {% set p1 = states('sensor.0pvp00ed26ut03e9_pv1_power') | float(0) %}
+              {% set p2 = states('sensor.0pvp00ed26ut03e9_pv2_power') | float(0) %}
+              {% set rest = states('sensor.0pvp00ed26ut03e9_solar_power_tower2') | float(0) %}
+
+              **Growatt Generation Today:** {{ total | round(2) }} kWh  
+              **Speicher 1 (integriert):** {{ s1 | round(2) }} kWh  
+              **Speicher 2 (integriert):** {{ s2 | round(2) }} kWh  
+              **Summe S1+S2:** {{ sum | round(2) }} kWh
+
+              ---
+              **Live**  
+              PV1 {{ p1 | round(0) }} W · PV2 {{ p2 | round(0) }} W · Rest/S2 {{ rest | round(0) }} W  
+              Gesamt {{ live | round(0) }} W
+          - type: entities
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_generation_today
+                name: Generation Today (API)
+              - entity: sensor.0pvp00ed26ut03e9_generation_today_tower1
+                name: Generation Today Speicher 1
+              - entity: sensor.0pvp00ed26ut03e9_generation_today_tower2
+                name: Generation Today Speicher 2
+              - entity: sensor.0pvp00ed26ut03e9_generation_total
+                name: Generation Total
+        column_span: 2
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Solar Panele – Kurven (24 h)
+            heading_style: title
+          - type: history-graph
+            title: PV1 · PV2 · Speicher 2 · Gesamt
+            hours_to_show: 24
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_pv1_power
+                name: PV1
+              - entity: sensor.0pvp00ed26ut03e9_pv2_power
+                name: PV2
+              - entity: sensor.0pvp00ed26ut03e9_solar_power_tower2
+                name: Speicher 2
+              - entity: sensor.0pvp00ed26ut03e9_solar_power
+                name: Gesamt
+        column_span: 4
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Einzelpanele
+            heading_style: title
+          - type: history-graph
+            title: PV1
+            hours_to_show: 24
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_pv1_power
+                name: PV1
+          - type: history-graph
+            title: PV2
+            hours_to_show: 24
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_pv2_power
+                name: PV2
+          - type: history-graph
+            title: Speicher 2 (Rest)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_solar_power_tower2
+                name: Speicher 2
+          - type: history-graph
+            title: PV3 / PV4 (API, oft 0)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_pv3_power
+                name: PV3
+              - entity: sensor.0pvp00ed26ut03e9_pv4_power
+                name: PV4
+        column_span: 4
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Noah Fluss (24 h)
+            heading_style: title
+          - type: history-graph
+            title: Solar · Laden · Entladen · Abgabe
+            hours_to_show: 24
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_solar_power
+                name: Solar
+              - entity: sensor.0pvp00ed26ut03e9_charging_power
+                name: Laden
+              - entity: sensor.0pvp00ed26ut03e9_discharge_power
+                name: Entladen
+              - entity: sensor.0pvp00ed26ut03e9_output_power
+                name: Abgabe
+          - type: history-graph
+            title: SoC Batterie 1 / 2
+            hours_to_show: 24
+            entities:
+              - entity: sensor.0pvp00ed26ut03e9_battery1_soc
+                name: Bat 1
+              - entity: sensor.0pvp00ed26ut03e9_battery2_soc
+                name: Bat 2
+              - entity: sensor.0pvp00ed26ut03e9_soc
+                name: Gesamt
+        column_span: 4
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Nexa
+            heading_style: title
+          - type: gauge
+            entity: sensor.0hvrd0zr247t000v_soc
+            name: Nexa SoC
+            min: 0
+            max: 100
+            needle: true
+          - type: entities
+            entities:
+              - entity: sensor.0hvrd0zr247t000v_solar_power
+                name: Solar
+              - entity: sensor.0hvrd0zr247t000v_output_power
+                name: Abgabe
+              - entity: sensor.0hvrd0zr247t000v_generation_today
+                name: Heute
+          - type: history-graph
+            title: Nexa Solar / Abgabe
+            hours_to_show: 24
+            entities:
+              - entity: sensor.0hvrd0zr247t000v_solar_power
+                name: Solar
+              - entity: sensor.0hvrd0zr247t000v_output_power
+                name: Abgabe
+        column_span: 2
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Wechselrichter (MIN)
+            heading_style: title
+          - type: history-graph
+            title: AC Output
+            hours_to_show: 24
+            entities:
+              - entity: sensor.bzp4nxx18c_ac_power
+                name: AC
+          - type: history-graph
+            title: WR PV Input
+            hours_to_show: 24
+            entities:
+              - entity: sensor.bzp4nxx18c_ppv
+                name: PV gesamt
+              - entity: sensor.bzp4nxx18c_ppv1
+                name: PPV1
+              - entity: sensor.bzp4nxx18c_ppv2
+                name: PPV2
+          - type: markdown
+            title: WR heute
+            content: |
+              {% set ac = states('sensor.bzp4nxx18c_energy_today') | float(0) %}
+              {% set i1 = states('sensor.bzp4nxx18c_energy_today_input_1') | float(0) %}
+              {% set i2 = states('sensor.bzp4nxx18c_energy_today_input_2') | float(0) %}
+              {% set pv = i1 + i2 %}
+              {% set loss = pv - ac %}
+              {% set pct = (loss / pv * 100) if pv > 0 else 0 %}
+
+              **Input 1:** {{ i1 | round(2) }} kWh  
+              **Input 2:** {{ i2 | round(2) }} kWh  
+              **PV Summe:** {{ pv | round(2) }} kWh  
+              **AC Today:** {{ ac | round(2) }} kWh  
+              **Diff:** {{ loss | round(2) }} kWh ({{ pct | round(1) }} %)
+        column_span: 2
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Hausnetz (EcoTracker)
+            heading_style: title
+          - type: history-graph
+            title: Phasenleistung
+            hours_to_show: 24
+            entities:
+              - entity: sensor.ecotracker_power_phase_1
+                name: L1
+              - entity: sensor.ecotracker_power_phase_2
+                name: L2
+              - entity: sensor.ecotracker_power_phase_3
+                name: L3
+          - type: entities
+            entities:
+              - entity: sensor.ecotracker_power
+                name: Power
+              - entity: sensor.ecotracker_total_grid_import
+                name: Import
+              - entity: sensor.ecotracker_total_grid_export
+                name: Export
+        column_span: 4
