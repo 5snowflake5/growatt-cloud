@@ -19,4 +19,4 @@ Images kommen von GHCR (kein Build auf dem Pi).
 - Optional MIN-WR (Energy Today / Input 1+2)
 - Poll-Limits respektieren (≥60 s Speicher, ≥300 s WR)
 
-Details: [growatt_cloud/DOCS.md](growatt_cloud/DOCS.md)
+Details: [growatt_cloud/DOCS.md](growatt_cloud/DOCS.md) · Changelog: [growatt_cloud/CHANGELOG.md](growatt_cloud/CHANGELOG.md)
