@@ -10,10 +10,11 @@ import threading
 import time
 from typing import Any
 
+from discovery_purge import STALE_DISCOVERY_KEYS
+
 LOG = logging.getLogger("growatt-cloud.mqtt")
 
 # object_id → (name, unit|None, device_class|None, state_class|None, component)
-# component: sensor | binary_sensor
 SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "soc": ("SoC", "%", "battery", "measurement", "sensor"),
     "solar_power": ("Solar Power", "W", "power", "measurement", "sensor"),
@@ -118,21 +119,18 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
 _META_SKIP = {"family", "label", "time", "device_name"}
 
 
-
 def slug(value: str) -> str:
     text = re.sub(r"[^a-zA-Z0-9_]+", "_", (value or "").strip().lower())
     return text.strip("_") or "device"
 
 
 def infer_meta(object_id: str) -> tuple[str, str | None, str | None, str | None, str]:
-    """HA-Meta für bekannte Keys oder Heuristik aus dem Feldnamen."""
     if object_id in SENSOR_META:
         return SENSOR_META[object_id]
 
     name = object_id.replace("_", " ").strip().title() or object_id
     oid = object_id.lower()
 
-    # Binary ON/OFF Namen (Wert entscheidet später nicht die Klasse – Heuristik)
     if oid in ("lost", "ct_flag", "shelly_flag", "smart_plan", "safety_enable") or oid.endswith("_enable"):
         return (name, None, None, None, "binary_sensor")
 
@@ -155,7 +153,22 @@ def infer_meta(object_id: str) -> tuple[str, str | None, str | None, str | None,
         unit, device_class = "dBm", "signal_strength"
     elif (
         any(oid.endswith(s) or s in oid for s in ("_today", "_total", "_month", "_year"))
-        and any(p in oid for p in ("eac", "epv", "energy", "e_to_", "e_local", "e_self", "e_system", "e_charge", "e_discharge", "generation", "eex"))
+        and any(
+            p in oid
+            for p in (
+                "eac",
+                "epv",
+                "energy",
+                "e_to_",
+                "e_local",
+                "e_self",
+                "e_system",
+                "e_charge",
+                "e_discharge",
+                "generation",
+                "eex",
+            )
+        )
     ) or re.match(r"^e(ac|pv|_|to_|local|self|system|charge|discharge)", oid):
         unit, device_class, state_class = "kWh", "energy", "total_increasing"
     elif (
@@ -177,7 +190,6 @@ def infer_meta(object_id: str) -> tuple[str, str | None, str | None, str | None,
         state_class = "total_increasing"
         unit = None
     else:
-        # reine Status-/Config-Texte ohne Messklasse
         if any(x in oid for x in ("text", "alias", "model", "version", "mode", "status", "warn", "fault", "sn")):
             state_class = None
 
@@ -193,6 +205,7 @@ class HaMqtt:
         password: str = "",
         discovery_prefix: str = "homeassistant",
         state_prefix: str = "growatt_cloud",
+        sensor_mode: str = "useful",
     ) -> None:
         self.host = host
         self.port = port
@@ -200,9 +213,13 @@ class HaMqtt:
         self.password = password
         self.discovery_prefix = discovery_prefix.rstrip("/") or "homeassistant"
         self.state_prefix = state_prefix.rstrip("/") or "growatt_cloud"
+        self.sensor_mode = sensor_mode
         self._client = None
         self._discovery_sig: dict[str, str] = {}
         self._discovery_keys: dict[str, set[str]] = {}
+        self._wanted_by_node: dict[str, set[str]] = {}
+        self._subscribed_nodes: set[str] = {}
+        self._stale_purged: set[str] = set()
         self._connected = threading.Event()
         self._keys_path = "/data/growatt_discovery_keys.json"
         self._load_discovery_keys()
@@ -248,7 +265,9 @@ class HaMqtt:
             if rc == 0:
                 LOG.info("MQTT verbunden (%s:%s)", self.host, self.port)
                 self._discovery_sig.clear()
-                self._discovery_keys.clear()
+                self._load_discovery_keys()
+                self._subscribed_nodes.clear()
+                self._stale_purged.clear()
                 c.publish(f"{self.state_prefix}/status", "online", retain=True)
                 self._connected.set()
             else:
@@ -260,8 +279,22 @@ class HaMqtt:
             if rc != 0:
                 LOG.warning("MQTT getrennt (rc=%s) – reconnect läuft", rc)
 
+        def on_message(_c, _u, msg):
+            parts = msg.topic.split("/")
+            if len(parts) < 5 or parts[-1] != "config":
+                return
+            component, node, object_id = parts[-4], parts[-3], parts[-2]
+            if component not in ("sensor", "binary_sensor"):
+                return
+            wanted = self._wanted_by_node.get(node)
+            if wanted is None or object_id in wanted or not msg.payload:
+                return
+            LOG.info("Entferne veraltete Discovery: %s", msg.topic)
+            self._pub(msg.topic, "", retain=True)
+
         client.on_connect = on_connect
         client.on_disconnect = on_disconnect
+        client.on_message = on_message
         LOG.info("MQTT verbindet zu %s:%s …", self.host, self.port)
         client.connect(self.host, self.port, keepalive=60)
         client.loop_start()
@@ -304,21 +337,47 @@ class HaMqtt:
             "serial_number": serial,
         }
 
+    def _clear_discovery(self, node: str, object_id: str) -> None:
+        for component in ("sensor", "binary_sensor"):
+            self._pub(f"{self.discovery_prefix}/{component}/{node}/{object_id}/config", "", retain=True)
+        self._pub(f"{self.state_prefix}/{node}/{object_id}", "", retain=True)
+
+    def _subscribe_purge(self, node: str) -> None:
+        if not self._client or node in self._subscribed_nodes:
+            return
+        for component in ("sensor", "binary_sensor"):
+            topic = f"{self.discovery_prefix}/{component}/{node}/+/config"
+            self._client.subscribe(topic, qos=0)
+            LOG.info("MQTT Purge-Subscribe %s", topic)
+        self._subscribed_nodes.add(node)
+
     def ensure_discovery(self, serial: str, label: str, values: dict[str, Any]) -> None:
-        """Discovery für gefilterte Werte; entfernte Keys werden per leerem Config gelöscht."""
         keys = sorted(k for k in values if k not in _META_SKIP and values[k] is not None)
         device_name = str(values.get("device_name") or values.get("alias") or serial)
-        model = str(values.get("model") or f"Growatt {label}")
-        sig = f"{device_name}|{model}|{'|'.join(keys)}"
-        if self._discovery_sig.get(serial) == sig:
-            return
-        device = self._device(serial, device_name, model)
+        model = str(values.get("model_text") or values.get("model") or f"Growatt {label}")
+        sig = f"{self.sensor_mode}|{device_name}|{model}|{'|'.join(keys)}"
         node = slug(serial)
         new_keys = set(keys)
+        self._wanted_by_node[node] = new_keys
+        self._subscribe_purge(node)
+
         old_keys = self._discovery_keys.get(serial) or set()
-        for gone in sorted(old_keys - new_keys):
-            for component in ("sensor", "binary_sensor"):
-                self._pub(f"{self.discovery_prefix}/{component}/{node}/{gone}/config", "", retain=True)
+        stale = (old_keys | set(STALE_DISCOVERY_KEYS)) - new_keys
+        need_publish = self._discovery_sig.get(serial) != sig
+        need_purge = serial not in self._stale_purged or need_publish
+
+        if need_purge and stale:
+            for gone in sorted(stale):
+                self._clear_discovery(node, gone)
+            LOG.info("HA-Discovery-Purge %s → %s Alt-Entities entfernt", serial, len(stale))
+            self._stale_purged.add(serial)
+
+        if not need_publish:
+            self._discovery_keys[serial] = new_keys
+            self._save_discovery_keys()
+            return
+
+        device = self._device(serial, device_name, model)
         count = 0
         for object_id in keys:
             name, unit, device_class, state_class, component = infer_meta(object_id)
@@ -363,49 +422,18 @@ class HaMqtt:
             count += 1
         self._discovery_sig[serial] = sig
         self._discovery_keys[serial] = new_keys
+        self._stale_purged.add(serial)
         self._save_discovery_keys()
         self._pub(f"{self.state_prefix}/status", "online", retain=True)
-        LOG.info("HA-Discovery %s (%s) %s → %s Entities", label, device_name, serial, count)
-        time.sleep(0.15)
-
-    def ensure_storage_discovery(self, serial: str, label: str) -> None:
-        self.ensure_discovery(
-            serial,
+        LOG.info(
+            "HA-Discovery %s (%s) %s mode=%s → %s Entities",
             label,
-            {
-                "soc": 0,
-                "solar_power": 0,
-                "output_power": 0,
-                "charging_power": 0,
-                "discharge_power": 0,
-                "generation_today": 0,
-                "generation_total": 0,
-                "battery_num": 1,
-                "system_temp": 0,
-                "ct_power": 0,
-                "work_mode": "unknown",
-                "heating": "OFF",
-                "connectivity": "ON",
-            },
-        )
-
-    def ensure_inverter_discovery(self, serial: str) -> None:
-        self.ensure_discovery(
+            device_name,
             serial,
-            "Wechselrichter",
-            {
-                "ac_power": 0,
-                "energy_today": 0,
-                "energy_total": 0,
-                "energy_today_input_1": 0,
-                "energy_today_input_2": 0,
-                "ppv": 0,
-                "ppv1": 0,
-                "ppv2": 0,
-                "connectivity": "ON",
-                "status": "unknown",
-            },
+            self.sensor_mode,
+            count,
         )
+        time.sleep(0.25)
 
     def publish_states(self, serial: str, values: dict[str, Any]) -> None:
         node = slug(serial)
