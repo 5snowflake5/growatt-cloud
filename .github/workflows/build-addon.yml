@@ -50,5 +50,5 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ghcr.io/5snowflake5/${{ matrix.arch }}-addon-growatt_cloud:${{ steps.ver.outputs.version }}
-            ghcr.io/5snowflake5/${{ matrix.arch }}-addon-growatt_cloud:latest
+            ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
+            ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:latest
