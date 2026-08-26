@@ -4,6 +4,12 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.22] – 2026-08-26
+
+### Removed
+- Virtuelles HA-Gerät „Noah Speicher 2“ / Tower 2 (Fake) – wieder entfernt; MQTT-Discovery wird bereinigt.
+- Sensoren **Solar Power Speicher 2** / Battery 2 bleiben am echten Noah.
+
 ## [0.1.21] – 2026-08-26
 
 ### Changed
