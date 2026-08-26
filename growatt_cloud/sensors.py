@@ -121,21 +121,25 @@ def detect_storage_label(raw: dict[str, Any], serial: str | None = None) -> str:
 
 def storage_device_name(raw: dict[str, Any], label: str, serial: str) -> str:
     """Immer mit Produktnamen – sonst bleibt in HA ewig 'Noah'."""
+    packs = _int(raw, "batteryPackageQuantity", "battery_package_quantity", default=1)
+    packs = max(1, min(packs, 4))
+    stack = f" {packs}T" if packs > 1 else ""
+
     alias = _pick(raw, "alias", "Alias")
     if alias:
         a = str(alias).strip()
         if a and a.upper() != serial.upper():
             low = a.lower()
             if "nexa" in low or "noah" in low:
-                return a
-            return f"{label} ({a})"
+                return f"{a}{stack}" if stack and stack.strip() not in a else a
+            return f"{label}{stack} ({a})"
     model = _pick(raw, "model", "Model")
     if model and str(model).strip() and not str(model).strip().isdigit():
         m = str(model).strip()
         if label.lower() in m.lower():
-            return m
-        return f"{label} ({m})"
-    return f"{label} {serial}"
+            return f"{m}{stack}" if packs > 1 and "T" not in m else m
+        return f"{label}{stack} ({m})"
+    return f"{label}{stack} {serial}"
 
 
 def flatten_raw(raw: dict[str, Any] | None) -> dict[str, Any]:
@@ -244,15 +248,16 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
         out[f"battery{i}_soc"] = soc if soc is not None else 0.0
         out[f"battery{i}_temp"] = temp if temp is not None else 0.0
 
+    # Immer alle 4 PV-Strings (auch 0) – zweiter Turm / String 3–4 sonst weggefiltert
     for i in range(1, 5):
-        v = _num(raw, f"pv{i}Voltage", f"pv{i}_voltage", default=None)
-        a = _num(raw, f"pv{i}Current", f"pv{i}_current", default=None)
-        if v is None and a is None:
-            continue
-        vv, aa = v or 0.0, a or 0.0
-        out[f"pv{i}_voltage"] = vv
-        out[f"pv{i}_current"] = aa
-        out[f"pv{i}_power"] = round(vv * aa, 1)
+        v = _num(raw, f"pv{i}Voltage", f"pv{i}_voltage", default=0.0) or 0.0
+        a = _num(raw, f"pv{i}Current", f"pv{i}_current", default=0.0) or 0.0
+        out[f"pv{i}_voltage"] = v
+        out[f"pv{i}_current"] = a
+        out[f"pv{i}_power"] = round(v * a, 1)
+        t = _num(raw, f"pv{i}Temp", f"pv{i}_temp", default=None)
+        if t is not None:
+            out[f"pv{i}_temp"] = t
 
     return out
 
@@ -797,7 +802,7 @@ def filter_published_values(
             out.pop(key, None)
             continue
 
-    _prune_inactive_pv(out)
+    _prune_inactive_pv(out) if kind == "min" else None
     if kind == "min":
         _prune_min_phases(out)
         _prune_zero_temps(out)
