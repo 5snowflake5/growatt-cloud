@@ -4,6 +4,10 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.25] – 2026-08-26
+
+### Changed
+- Entity-IDs neu und stabil: sensor.gc_<serial>_<key> (alte Name-/Kollisions-IDs wie output_power_2 werden ersetzt).
 ## [0.1.24] – 2026-08-26
 
 ### Changed
