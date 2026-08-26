@@ -1,5 +1,7 @@
 # Growatt Cloud
 
+Changelog: [CHANGELOG.md](CHANGELOG.md)
+
 ## Warum
 
 `noah-mqtt` + HA **Growatt Server** = zwei Logins / viele Requests → Account-Sperre.
