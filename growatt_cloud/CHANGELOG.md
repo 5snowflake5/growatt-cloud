@@ -4,6 +4,13 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.13] – 2026-08-26
+
+### Fixed
+- Noah + Nexa teilen sich 1 Energy-Abruf/Min: bisher hat oft nur eines Daten bekommen (Rate-Limit), der andere (z. B. Noah mit 2 Türmen / PV) blieb leer.
+- DeviceInfo/WiFi verbrauchen den Energy-Slot nicht mehr.
+- Round-Robin: pro Loop nur ein Speicher – abwechselnd Noah und Nexa (ca. alle 2 Min je Gerät).
+
 ## [0.1.12] – 2026-08-26
 
 ### Fixed
