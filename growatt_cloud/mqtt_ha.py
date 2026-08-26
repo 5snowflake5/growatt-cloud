@@ -202,6 +202,7 @@ class HaMqtt:
         self.state_prefix = state_prefix.rstrip("/") or "growatt_cloud"
         self._client = None
         self._discovery_sig: dict[str, str] = {}
+        self._discovery_keys: dict[str, set[str]] = {}
         self._connected = threading.Event()
 
     def connect(self) -> None:
@@ -225,6 +226,7 @@ class HaMqtt:
             if rc == 0:
                 LOG.info("MQTT verbunden (%s:%s)", self.host, self.port)
                 self._discovery_sig.clear()
+                self._discovery_keys.clear()
                 c.publish(f"{self.state_prefix}/status", "online", retain=True)
                 self._connected.set()
             else:
@@ -281,7 +283,7 @@ class HaMqtt:
         }
 
     def ensure_discovery(self, serial: str, label: str, values: dict[str, Any]) -> None:
-        """Discovery für alle vorhandenen Werte – inkl. neuer API-Felder ohne Whitelist."""
+        """Discovery für gefilterte Werte; entfernte Keys werden per leerem Config gelöscht."""
         keys = sorted(k for k in values if k not in _META_SKIP and values[k] is not None)
         device_name = str(values.get("device_name") or values.get("alias") or serial)
         model = str(values.get("model") or f"Growatt {label}")
@@ -290,17 +292,24 @@ class HaMqtt:
             return
         device = self._device(serial, device_name, model)
         node = slug(serial)
+        new_keys = set(keys)
+        old_keys = self._discovery_keys.get(serial) or set()
+        for gone in sorted(old_keys - new_keys):
+            for component in ("sensor", "binary_sensor"):
+                self._pub(f"{self.discovery_prefix}/{component}/{node}/{gone}/config", "", retain=True)
         count = 0
         for object_id in keys:
             name, unit, device_class, state_class, component = infer_meta(object_id)
-            # Wert ON/OFF → binary_sensor erzwingen
             val = values.get(object_id)
             if isinstance(val, str) and val.upper() in ("ON", "OFF") and component == "sensor":
-                if object_id in ("heating", "connectivity") or object_id.endswith("_enable") or object_id in (
+                if object_id in (
+                    "heating",
+                    "connectivity",
+                    "allow_grid_charging",
                     "lost",
                     "ct_flag",
                     "shelly_flag",
-                ):
+                ) or object_id.endswith("_enable"):
                     component = "binary_sensor"
             unique = f"growatt_cloud_{node}_{object_id}"
             topic = f"{self.discovery_prefix}/{component}/{node}/{object_id}/config"
@@ -326,12 +335,12 @@ class HaMqtt:
                 payload["state_class"] = state_class
             if device_class == "energy":
                 payload["state_class"] = "total_increasing"
-            # timestamp nur bei ISO-8601 mit T (HA-Anforderung)
             if device_class == "timestamp" and not (isinstance(val, str) and "T" in val):
                 payload.pop("device_class", None)
             self._pub(topic, json.dumps(payload), retain=True)
             count += 1
         self._discovery_sig[serial] = sig
+        self._discovery_keys[serial] = new_keys
         self._pub(f"{self.state_prefix}/status", "online", retain=True)
         LOG.info("HA-Discovery %s (%s) %s → %s Entities", label, device_name, serial, count)
         time.sleep(0.15)
