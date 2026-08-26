@@ -50,5 +50,5 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ghcr.io/fromwatertowind/${{ matrix.arch }}-addon-growatt_cloud:${{ steps.ver.outputs.version }}
-            ghcr.io/fromwatertowind/${{ matrix.arch }}-addon-growatt_cloud:latest
+            ghcr.io/fromwatertowind/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
+            ghcr.io/fromwatertowind/growatt-cloud/${{ matrix.arch }}:latest

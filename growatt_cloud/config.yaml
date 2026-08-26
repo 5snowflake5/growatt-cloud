@@ -1,5 +1,5 @@
 name: Growatt Cloud
-version: "0.1.0"
+version: "0.1.1"
 slug: growatt_cloud
 description: >-
   Noah/Nexa + MIN-Wechselrichter über Growatt Open API (ein Token, v4).
@@ -8,7 +8,7 @@ url: https://github.com/fromWaterToWind/growatt-cloud
 arch:
   - aarch64
   - amd64
-image: "ghcr.io/fromwatertowind/{arch}-addon-growatt_cloud"
+image: "ghcr.io/fromwatertowind/growatt-cloud/{arch}"
 init: false
 startup: services
 boot: auto
