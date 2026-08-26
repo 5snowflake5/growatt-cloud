@@ -26,8 +26,9 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.17"
+VERSION = "0.1.18"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
+TOWER_ENERGY_PATH = "/data/growatt_tower_energy.json"
 LOG = logging.getLogger("growatt-cloud")
 
 STORAGE_TYPES = {"noah", "nexa"}
@@ -105,9 +106,67 @@ class Bridge:
         self._last_devices = 0.0
         self._last_storage: dict[str, float] = {}
         self._last_inverter: dict[str, float] = {}
+        self._pack_floor: dict[str, int] = {}  # SN → max gesehene Packs (nie runter)
+        self._tower_wh: dict[str, dict[str, float]] = {}  # SN → {day, t1, t2, ts}
+        self._load_tower_energy()
 
     def request_stop(self, *_args) -> None:
         self.stop = True
+
+    def _load_tower_energy(self) -> None:
+        try:
+            if not os.path.isfile(TOWER_ENERGY_PATH):
+                return
+            import json
+
+            with open(TOWER_ENERGY_PATH, encoding="utf-8") as fh:
+                raw = json.load(fh)
+            if isinstance(raw, dict):
+                self._tower_wh = {k: v for k, v in raw.items() if isinstance(v, dict)}
+        except Exception:
+            self._tower_wh = {}
+
+    def _save_tower_energy(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(TOWER_ENERGY_PATH), exist_ok=True)
+            import json
+
+            with open(TOWER_ENERGY_PATH, "w", encoding="utf-8") as fh:
+                json.dump(self._tower_wh, fh)
+        except Exception as exc:
+            LOG.debug("Tower-Energy speichern: %s", exc)
+
+    def _apply_sticky_packs(self, sn: str, values: dict[str, Any]) -> None:
+        packs = int(values.get("battery_num") or 1)
+        packs = max(1, min(packs, 4))
+        floor = max(packs, self._pack_floor.get(sn, 1))
+        self._pack_floor[sn] = floor
+        if floor > packs:
+            values["battery_num"] = floor
+            for i in range(packs + 1, floor + 1):
+                values.setdefault(f"battery{i}_soc", 0.0)
+                values.setdefault(f"battery{i}_temp", 0.0)
+
+    def _accumulate_tower_energy(self, sn: str, values: dict[str, Any]) -> None:
+        """Noah liefert keine epv3/epv4 – Turm-Tages-kWh aus Live-PV integrieren."""
+        now = time.time()
+        day = time.strftime("%Y-%m-%d", time.localtime(now))
+        state = self._tower_wh.get(sn) or {"day": day, "t1": 0.0, "t2": 0.0, "ts": now}
+        if state.get("day") != day:
+            state = {"day": day, "t1": 0.0, "t2": 0.0, "ts": now}
+        last = float(state.get("ts") or now)
+        dt_h = max(0.0, min((now - last) / 3600.0, 2.0))
+        t1_w = float(values.get("solar_power_tower1") or 0.0)
+        t2_w = float(values.get("solar_power_tower2") or 0.0)
+        if last and dt_h > 0:
+            state["t1"] = float(state.get("t1") or 0.0) + t1_w * dt_h
+            state["t2"] = float(state.get("t2") or 0.0) + t2_w * dt_h
+        state["ts"] = now
+        state["day"] = day
+        self._tower_wh[sn] = state
+        values["generation_today_tower1"] = round(float(state["t1"]) / 1000.0, 3)
+        values["generation_today_tower2"] = round(float(state["t2"]) / 1000.0, 3)
+        self._save_tower_energy()
 
     def refresh_devices(self, force: bool = False) -> None:
         now = time.monotonic()
@@ -167,23 +226,31 @@ class Bridge:
             try:
                 raw = self.api.query_last_data(sn, api_type)
                 values = self._enrich(sn, api_type, raw, "storage")
+                self._apply_sticky_packs(sn, values)
+                self._accumulate_tower_energy(sn, values)
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
                 self._last_storage[sn] = time.monotonic()
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
-                    "%s %s SoC=%s%% PV=%.0fW (1=%.0f 2=%.0f 3=%.0f 4=%.0f) Out=%.0fW Today=%.2fkWh packs=%s mode=%s entities=%s",
+                    "%s %s SoC=%s%% PV=%.0fW T1=%.0fW T2=%.0fW (1=%.0f 2=%.0f 3=%.0f 4=%.0f) "
+                    "Out=%.0fW Today=%.2fkWh T1=%.2f T2=%.2fkWh packs=%s bat2=%s%% mode=%s entities=%s",
                     values["label"],
                     sn,
                     values.get("soc"),
                     values.get("solar_power") or 0,
+                    values.get("solar_power_tower1") or 0,
+                    values.get("solar_power_tower2") or 0,
                     values.get("pv1_power") or 0,
                     values.get("pv2_power") or 0,
                     values.get("pv3_power") or 0,
                     values.get("pv4_power") or 0,
                     values.get("output_power") or 0,
                     values.get("generation_today") or 0,
+                    values.get("generation_today_tower1") or 0,
+                    values.get("generation_today_tower2") or 0,
                     values.get("battery_num"),
+                    values.get("battery2_soc"),
                     self.sensor_mode,
                     entity_n,
                 )

@@ -121,7 +121,14 @@ def detect_storage_label(raw: dict[str, Any], serial: str | None = None) -> str:
 
 def storage_device_name(raw: dict[str, Any], label: str, serial: str) -> str:
     """Immer mit Produktnamen – sonst bleibt in HA ewig 'Noah'."""
-    packs = _int(raw, "batteryPackageQuantity", "battery_package_quantity", default=1)
+    packs = _int(
+        raw,
+        "batteryPackageQuantity",
+        "battery_package_quantity",
+        "batteryNum",
+        "battery_num",
+        default=1,
+    )
     packs = max(1, min(packs, 4))
     stack = f" {packs}T" if packs > 1 else ""
 
@@ -193,8 +200,22 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
         charge_w = max(bat, 0.0)
         discharge_w = abs(min(bat, 0.0))
 
-    packs = _int(raw, "batteryPackageQuantity", "battery_package_quantity", default=1)
+    packs = _int(
+        raw,
+        "batteryPackageQuantity",
+        "battery_package_quantity",
+        "batteryNum",
+        "battery_num",
+        default=1,
+    )
     packs = max(1, min(packs, 4))
+    # Wenn API packs untertreibt: aus Battery-/SN-Feldern nachziehen
+    for i in range(4, packs, -1):
+        soc = _num(raw, f"battery{i}Soc", f"battery{i}_soc", default=None)
+        bsn = _pick(raw, f"battery{i}SerialNum", f"battery{i}_serial_num")
+        if (soc is not None and float(soc) > 0) or (bsn and str(bsn).strip() and str(bsn).strip() not in ("0", "None")):
+            packs = i
+            break
     work = _int(raw, "workMode", "work_mode")
     heating = _int(raw, "heatingStatus", "heating_status")
     lost = raw.get("lost") in (True, 1, "1", "true", "True")
@@ -248,16 +269,37 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
         out[f"battery{i}_soc"] = soc if soc is not None else 0.0
         out[f"battery{i}_temp"] = temp if temp is not None else 0.0
 
-    # Immer alle 4 PV-Strings (auch 0 W). Bei 2-Turm-Stack: PV3/PV4 = oft Turm 2.
+    # Immer alle 4 PV-Strings (auch 0 W). Bei 2-Turm-Stack: PV3/PV4 = Turm 2.
     for i in range(1, 5):
         v = _num(raw, f"pv{i}Voltage", f"pv{i}_voltage", default=0.0) or 0.0
-        a = _num(raw, f"pv{i}Current", f"pv{i}_current", default=0.0) or 0.0
+        a = (
+            _num(
+                raw,
+                f"pv{i}Current",
+                f"pv{i}_current",
+                f"pv{i}ElectricCurrent",
+                f"pv{i}_electric_current",
+                default=0.0,
+            )
+            or 0.0
+        )
+        p_direct = _num(raw, f"ppv{i}", f"pv{i}Power", f"pv{i}_power", default=None)
         out[f"pv{i}_voltage"] = v
         out[f"pv{i}_current"] = a
-        out[f"pv{i}_power"] = round(v * a, 1)
+        if p_direct is not None and abs(float(p_direct)) > 0.05:
+            out[f"pv{i}_power"] = round(float(p_direct), 1)
+        else:
+            out[f"pv{i}_power"] = round(v * a, 1)
         t = _num(raw, f"pv{i}Temp", f"pv{i}_temp", default=None)
         if t is not None:
             out[f"pv{i}_temp"] = t
+
+    out["solar_power_tower1"] = round(
+        (out.get("pv1_power") or 0.0) + (out.get("pv2_power") or 0.0), 1
+    )
+    out["solar_power_tower2"] = round(
+        (out.get("pv3_power") or 0.0) + (out.get("pv4_power") or 0.0), 1
+    )
 
     return out
 
@@ -860,7 +902,7 @@ def filter_published_values(
             _prune_min_noise(out, aggressive=True)
 
     out.update(meta)
-    # Speicher: PV1–4 nach dem Filter nochmal erzwingen (dürfen nie wegfallen)
+    # Speicher: PV1–4 + Turm-Summen nach dem Filter erzwingen
     if kind == "storage":
         for i in range(1, 5):
             for suffix, default in (
@@ -876,6 +918,25 @@ def filter_published_values(
             tkey = f"pv{i}_temp"
             if tkey in values and values[tkey] is not None:
                 out[tkey] = values[tkey]
+        for key in ("solar_power_tower1", "solar_power_tower2"):
+            if key in values:
+                out[key] = values[key]
+            elif key not in out:
+                out[key] = 0.0
+        for key in ("generation_today_tower1", "generation_today_tower2"):
+            if key in values and values[key] is not None:
+                out[key] = values[key]
+        # Batterie-SoC/Temp für bekannte Packs nie droppen
+        packs = int(values.get("battery_num") or out.get("battery_num") or 1)
+        packs = max(1, min(packs, 4))
+        out["battery_num"] = packs
+        for i in range(1, packs + 1):
+            for suffix in ("soc", "temp"):
+                key = f"battery{i}_{suffix}"
+                if key in values:
+                    out[key] = values[key]
+                elif key not in out:
+                    out[key] = 0.0
     return out
 
 
@@ -927,6 +988,10 @@ _CURATED_KEEP_STORAGE = {
     "pv4_power",
     "pv4_voltage",
     "pv4_current",
+    "solar_power_tower1",
+    "solar_power_tower2",
+    "generation_today_tower1",
+    "generation_today_tower2",
 }
 
 # Schlanker MIN-Kern (~Growatt-Server „sinnvoll“)
@@ -984,7 +1049,19 @@ _CURATED_KEEP_MIN = {
     "last_update",
 }
 
-SENSOR_META_HINTS = _CURATED_KEEP_STORAGE | _CURATED_KEEP_MIN
+# Keys die im useful-Modus nie als „Stale Junk“ gelöscht werden dürfen
+PROTECTED_DISCOVERY_KEYS = frozenset(
+    _CURATED_KEEP_STORAGE
+    | _CURATED_KEEP_MIN
+    | _USEFUL_EXTRA_STORAGE
+    | _USEFUL_EXTRA_MIN
+    | {
+        "family",
+        "label",
+        "device_name",
+        "wifi_signal",
+    }
+)
 
 
 def merge_device_values(
