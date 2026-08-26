@@ -4,6 +4,17 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.19] – 2026-08-26
+
+### Added
+- **Virtuelles HA-Gerät „Noah Tower 2“** für den zweiten Stack-Turm (kein eigenes WLAN).
+  Enthält SoC, Batterie-Temp, Solar Power, Generation Today, PV1/PV2 (= System PV3/PV4).
+  In HA unter Einstellungen → Geräte als eigenes Gerät, verknüpft mit dem Master-Noah (`via_device`).
+
+### Note
+- Growatt listet den 2. Turm **nicht** als separates Cloud-Gerät – nur der Master hat WLAN/API.
+- Tages-kWh Tower 2 wird lokal aus Live-PV integriert (API liefert keinen Split).
+
 ## [0.1.18] – 2026-08-26
 
 ### Fixed
