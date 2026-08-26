@@ -2,6 +2,10 @@
 
 Changelog: [CHANGELOG.md](CHANGELOG.md)
 
+## Releases
+
+Version in `config.yaml` wird erst gesetzt, **nachdem** das Docker-Image auf GHCR liegt (Actions → **Release add-on**). So erscheint in HA kein Update ohne Image.
+
 ## Warum
 
 `noah-mqtt` + HA **Growatt Server** = zwei Logins / viele Requests → Account-Sperre.

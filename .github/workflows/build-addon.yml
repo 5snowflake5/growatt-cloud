@@ -1,4 +1,7 @@
-name: Build add-on images
+name: Build add-on images (edge)
+
+# Nur Preview-Tags. HA-Updates kommen erst nach "Release add-on"
+# (Image zuerst auf GHCR, danach Versionsbump in config.yaml).
 
 on:
   push:
@@ -26,12 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Read version
+      - name: Edge tag
         id: ver
         run: |
-          v=$(sed -n 's/^version: "\(.*\)"/\1/p' growatt_cloud/config.yaml | head -1)
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "Building growatt_cloud $v for ${{ matrix.arch }}"
+          sha="${GITHUB_SHA::7}"
+          echo "tag=edge" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=sha-$sha" >> "$GITHUB_OUTPUT"
+          echo "Building growatt_cloud edge ($sha) for ${{ matrix.arch }}"
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -50,5 +54,5 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
-            ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:latest
+            ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.tag }}
+            ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.sha_tag }}
