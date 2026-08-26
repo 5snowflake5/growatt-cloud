@@ -61,21 +61,41 @@ def _pick(data: dict[str, Any], *keys: str) -> Any:
     return None
 
 
-def detect_storage_label(raw: dict[str, Any], serial: str | None = None) -> str:
-    """Noah vs Nexa: API-Typ ist bei beiden 'noah' – Unterscheidung über Model/Alias/SN.
+def _serial_candidates(raw: dict[str, Any], serial: str | None = None) -> list[str]:
+    """Alle möglichen SN-Felder – Geräteliste hat Vorrang."""
+    out: list[str] = []
+    if serial and str(serial).strip():
+        out.append(str(serial).strip())
+    for key in (
+        "deviceSn",
+        "device_sn",
+        "datalogSn",
+        "datalog_sn",
+        "dataloggerSn",
+        "datalogger_sn",
+        "serialNum",
+        "serial_num",
+    ):
+        val = raw.get(key)
+        if val is None or val == "":
+            continue
+        text = str(val).strip()
+        if text and text not in out:
+            out.append(text)
+    return out
 
-    Typische Serial-Präfixe: 0PVP… = Noah, 0HVR… = Nexa.
+
+def detect_storage_label(raw: dict[str, Any], serial: str | None = None) -> str:
+    """Noah vs Nexa: API-Typ ist bei beiden 'noah'.
+
+    Serial-Präfix schlägt Model (zuverlässiger): 0HVR/HVR = Nexa, 0PVP/PVP = Noah.
     """
-    sn = str(
-        serial
-        or raw.get("deviceSn")
-        or raw.get("device_sn")
-        or raw.get("datalogSn")
-        or raw.get("datalog_sn")
-        or raw.get("dataloggerSn")
-        or raw.get("datalogger_sn")
-        or ""
-    ).strip().upper()
+    for sn in _serial_candidates(raw, serial):
+        snu = sn.upper().replace(" ", "")
+        if snu.startswith("0HVR") or snu.startswith("HVR") or "0HVR" in snu or snu.startswith("NEXA"):
+            return "Nexa"
+        if snu.startswith("0PVP") or snu.startswith("PVP") or "0PVP" in snu:
+            return "Noah"
 
     blob = " ".join(
         str(x)
@@ -90,28 +110,31 @@ def detect_storage_label(raw: dict[str, Any], serial: str | None = None) -> str:
         if x
     ).lower()
 
-    # Explizite Model-/Alias-Treffer zuerst (nicht "neo" – das ist der Balkon-WR)
-    if re.search(r"\bnexa\b", blob) or "nexa 2000" in blob or "nexa2000" in blob:
+    # nicht "neo" (Balkon-WR Model Name)
+    if re.search(r"\bnexa\b", blob) or "nexa2000" in blob.replace(" ", ""):
         return "Nexa"
-    if re.search(r"\bnoah\b", blob) or "noah 2000" in blob or "noah2000" in blob:
+    if re.search(r"\bnoah\b", blob) or "noah2000" in blob.replace(" ", ""):
         return "Noah"
 
-    if sn.startswith("0HVR") or sn.startswith("HVR"):
-        return "Nexa"
-    if sn.startswith("0PVP") or sn.startswith("PVP"):
-        return "Noah"
-
-    # Fallback: API liefert type=noah für beide
     return "Noah"
 
 
 def storage_device_name(raw: dict[str, Any], label: str, serial: str) -> str:
+    """Immer mit Produktnamen – sonst bleibt in HA ewig 'Noah'."""
     alias = _pick(raw, "alias", "Alias")
-    if alias and str(alias).strip() and str(alias).strip().upper() != serial.upper():
-        return str(alias).strip()
+    if alias:
+        a = str(alias).strip()
+        if a and a.upper() != serial.upper():
+            low = a.lower()
+            if "nexa" in low or "noah" in low:
+                return a
+            return f"{label} ({a})"
     model = _pick(raw, "model", "Model")
-    if model and str(model).strip():
-        return str(model).strip()
+    if model and str(model).strip() and not str(model).strip().isdigit():
+        m = str(model).strip()
+        if label.lower() in m.lower():
+            return m
+        return f"{label} ({m})"
     return f"{label} {serial}"
 
 
@@ -155,7 +178,7 @@ def flatten_raw(raw: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
-def _curated_storage(raw: dict[str, Any]) -> dict[str, Any]:
+def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str, Any]:
     bat = _num(raw, "totalBatteryPackChargingPower", "total_battery_pack_charging_power") or 0.0
     status = _int(raw, "totalBatteryPackChargingStatus", "total_battery_pack_charging_status")
     if status == 1:
@@ -166,22 +189,21 @@ def _curated_storage(raw: dict[str, Any]) -> dict[str, Any]:
         charge_w = max(bat, 0.0)
         discharge_w = abs(min(bat, 0.0))
 
-    label = detect_storage_label(raw)
     packs = _int(raw, "batteryPackageQuantity", "battery_package_quantity", default=1)
     packs = max(1, min(packs, 4))
     work = _int(raw, "workMode", "work_mode")
     heating = _int(raw, "heatingStatus", "heating_status")
     lost = raw.get("lost") in (True, 1, "1", "true", "True")
-    sn = str(
+    sn = (serial or "").strip() or str(
         _pick(raw, "deviceSn", "device_sn", "datalogSn", "datalog_sn", "dataloggerSn", "datalogger_sn") or ""
     )
-    # Label nochmal mit SN absichern (falls Model fehlt)
     label = detect_storage_label(raw, sn or None)
 
     out: dict[str, Any] = {
         "family": label.lower(),
         "label": label,
         "device_name": storage_device_name(raw, label, sn or "storage"),
+        "product": label,
         "soc": _num(raw, "totalBatteryPackSoc", "total_battery_pack_soc", "soc"),
         "solar_power": _num(raw, "ppv"),
         "output_power": abs(_num(raw, "pac") or 0.0),
@@ -838,6 +860,7 @@ def filter_published_values(
 
 # Alias-Keys die im useful-Modus immer Kandidaten sind
 _CURATED_KEEP_STORAGE = {
+    "product",
     "soc",
     "solar_power",
     "output_power",
@@ -953,12 +976,18 @@ def merge_device_values(
     mode: str = "useful",
 ) -> dict[str, Any]:
     """info (Details) + energy (LastData) + Aliase, dann Filter (useful/full)."""
+    mode = (mode or "useful").strip().lower()
+    if mode not in ("useful", "full"):
+        mode = "useful"
+
     combined = {**(info or {}), **(energy or {})}
+    # Gerätelisten-SN hat Vorrang (Erkennung Noah/Nexa)
     if serial:
-        combined.setdefault("deviceSn", serial)
+        combined["deviceSn"] = serial
+
     flat = {**flatten_raw(info), **flatten_raw(energy)}
     if kind == "storage":
-        curated = _curated_storage(combined)
+        curated = _curated_storage(combined, serial=serial)
         packs = int(curated.get("battery_num") or 1)
         for i in range(packs + 1, 5):
             for suffix in ("soc", "temp", "temp_f", "serial_num", "protect_status", "warn_status"):
@@ -968,6 +997,18 @@ def merge_device_values(
             flat.pop(f"battery{i}_temp_f", None)
     else:
         curated = _curated_min(combined)
+
+    if mode == "useful":
+        # Nur Aliase + erlaubte Extras – kein Rohdaten-Durchrauschen
+        extras = _USEFUL_EXTRA_STORAGE if kind == "storage" else _USEFUL_EXTRA_MIN
+        out = dict(curated)
+        for key in extras:
+            if key in flat and key not in out:
+                out[key] = flat[key]
+        if wifi_dbm is not None:
+            out["wifi_signal"] = wifi_dbm
+        return filter_published_values(out, kind=kind, mode=mode)
+
     out = {**flat, **curated}
     if wifi_dbm is not None:
         out["wifi_signal"] = wifi_dbm

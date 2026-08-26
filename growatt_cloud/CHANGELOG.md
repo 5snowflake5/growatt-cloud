@@ -4,6 +4,16 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.11] – 2026-08-26
+
+### Fixed
+- Nexa-Erkennung: Serial aus der Geräteliste hat Vorrang; `0HVR`/`HVR` → Nexa (vor Model-Text).
+- `useful`-Modus baut Sensoren nur noch aus Whitelist (kein Rohdaten-Leak für Speicher/WR).
+- HA-Gerätename/Model erzwingen (`Nexa …` / `Growatt Nexa`), damit alte „Noah“-Namen überschrieben werden.
+
+### Changed
+- Log zeigt `mode=useful entities=N` für Speicher und WR.
+
 ## [0.1.10] – 2026-08-26
 
 ### Fixed
