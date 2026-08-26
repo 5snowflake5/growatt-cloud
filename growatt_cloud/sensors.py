@@ -297,6 +297,389 @@ def _curated_min(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Keys die im Modus "useful" zusätzlich zu den Aliasen erlaubt sind
+_USEFUL_EXTRA_STORAGE = {
+    "wifi_signal",
+    "fw_version",
+    "model",
+    "alias",
+    "max_cell_voltage",
+    "min_cell_voltage",
+    "fault_status",
+    "on_grid_voltage",
+    "on_grid_current",
+    "off_grid_voltage",
+    "off_grid_current",
+    "pv1_temp",
+    "pv2_temp",
+    "pv3_temp",
+    "pv4_temp",
+    "device_to_grid_power",
+    "grid_to_device_power",
+    "allow_grid_charging",
+}
+
+_USEFUL_EXTRA_MIN = {
+    "wifi_signal",
+    "fw_version",
+    "model",
+    "alias",
+    "status_text",
+    "warn_text",
+    "error_text",
+    "ipv3",
+    "ipv4",
+    "vpv3",
+    "vpv4",
+    "ppv3",
+    "ppv4",
+    "vac2",
+    "vac3",
+    "iac2",
+    "iac3",
+    "pac2",
+    "pac3",
+    "temp3",
+    "temp4",
+    "temp5",
+}
+
+# Roh-Duplikate der freundlichen Aliase (nur im full-Modus relevant zum Aufräumen)
+_RAW_DUPES = {
+    "total_battery_pack_soc",
+    "total_battery_pack_charging_power",
+    "total_battery_pack_charging_status",
+    "eac_today",
+    "eac_total",
+    "eac_month",
+    "eac_year",
+    "ct_self_power",
+    "total_household_load",
+    "household_load_apart_from_groplug",
+    "battery_package_quantity",
+    "charging_soc_high_limit",
+    "charging_soc_low_limit",
+    "heating_status",
+    "work_mode",  # curated überschreibt als Text; raw int bleibt sonst doppelt – siehe filter
+    "ppv",  # solar_power
+    "pac",  # output_power / ac_power
+    "status",  # status_code curated
+    "lost",  # connectivity
+    "time_str",
+    "last_update_time",
+    "last_update_time_text",
+    "sys_time",
+    "sys_time_text",
+    "datalog_sn",
+    "datalogger_sn",
+}
+
+_ALWAYS_DROP_SUFFIXES = ("_temp_f",)
+_ALWAYS_DROP_PREFIXES = ()
+_ALWAYS_DROP_KEYS = {
+    "is_again",
+    "again",
+    "address",
+    "timezone",
+    "temp_type",
+    "settable_time_period",
+    "ebm_order_num",
+    "eastron_ammeter_control_pair",
+    "ammeter_unbind",
+    "ota_device_type_code_high",
+    "ota_device_type_code_low",
+    "port_name",
+    "man_name",
+    "associated_inv_man_and_model",
+    "associated_inv_sn",
+    "calendar",
+    "day",
+    "with_time",
+    "time_total",
+}
+
+
+def _is_empty(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+def _is_epoch_ms(value: Any) -> bool:
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return False
+    # ~2001–2100 in ms
+    return 1_000_000_000_000 <= n <= 4_000_000_000_000
+
+
+def _prune_inactive_pv(out: dict[str, Any]) -> None:
+    for i in range(1, 5):
+        power = out.get(f"pv{i}_power")
+        if power is None:
+            power = out.get(f"ppv{i}")
+        volts = out.get(f"pv{i}_voltage")
+        if volts is None:
+            volts = out.get(f"vpv{i}")
+        amps = out.get(f"pv{i}_current")
+        if amps is None:
+            amps = out.get(f"ipv{i}")
+        active = False
+        for v in (power, volts, amps):
+            try:
+                if v is not None and abs(float(v)) > 0.05:
+                    active = True
+                    break
+            except (TypeError, ValueError):
+                continue
+        if active:
+            continue
+        for key in (
+            f"pv{i}_power",
+            f"pv{i}_voltage",
+            f"pv{i}_current",
+            f"pv{i}_temp",
+            f"ppv{i}",
+            f"vpv{i}",
+            f"ipv{i}",
+            f"energy_today_input_{i}",
+            f"energy_total_input_{i}",
+            f"epv{i}_today",
+            f"epv{i}_total",
+        ):
+            out.pop(key, None)
+
+
+def filter_published_values(
+    values: dict[str, Any],
+    *,
+    kind: str,
+    mode: str = "useful",
+) -> dict[str, Any]:
+    """Rauschen entfernen. mode=useful (Default) oder full."""
+    mode = (mode or "useful").strip().lower()
+    if mode not in ("useful", "full"):
+        mode = "useful"
+
+    out = dict(values)
+    meta = {k: out.pop(k) for k in ("family", "label", "device_name") if k in out}
+
+    # immer: leer, Epoch-ms, °F, bekannte Müll-Keys, Zeitfenster-Start/Ende/Enable
+    for key in list(out.keys()):
+        val = out[key]
+        if _is_empty(val):
+            out.pop(key, None)
+            continue
+        if key in _ALWAYS_DROP_KEYS or any(key.endswith(s) for s in _ALWAYS_DROP_SUFFIXES):
+            out.pop(key, None)
+            continue
+        if _is_epoch_ms(val) and ("time" in key or key.startswith("sys_")):
+            out.pop(key, None)
+            continue
+        if re.match(r"^time[1-9]_(start|end|enable)$", key):
+            out.pop(key, None)
+            continue
+        if key.endswith("_serial_num") and (val in (0, "0") or _is_empty(val)):
+            out.pop(key, None)
+            continue
+
+    _prune_inactive_pv(out)
+
+    if mode == "useful":
+        extras = _USEFUL_EXTRA_STORAGE if kind == "storage" else _USEFUL_EXTRA_MIN
+        keep = set(_CURATED_KEEP_STORAGE if kind == "storage" else _CURATED_KEEP_MIN)
+        keep |= extras
+        out = {k: v for k, v in out.items() if k in keep}
+        out = {k: v for k, v in out.items() if not re.match(r"^time[1-9]_", k)}
+        if "allow_grid_charging" in out:
+            try:
+                out["allow_grid_charging"] = "ON" if int(float(out["allow_grid_charging"])) else "OFF"
+            except (TypeError, ValueError):
+                out.pop("allow_grid_charging", None)
+        for key in list(out.keys()):
+            if key.endswith(("_protect_status", "_warn_status")) or key in (
+                "ac_couple_protect_status",
+                "ac_couple_warn_status",
+                "mppt_protect_status",
+                "pd_warn_status",
+            ):
+                try:
+                    if float(out[key]) == 0:
+                        out.pop(key, None)
+                except (TypeError, ValueError):
+                    out.pop(key, None)
+    else:
+        # full: Duplikate zu Aliasen entfernen, Zeitfenster behalten (ohne leere start/end)
+        for key in list(_RAW_DUPES):
+            # curated Alias existiert? dann raw weg
+            alias_map = {
+                "total_battery_pack_soc": "soc",
+                "total_battery_pack_charging_power": "charging_power",
+                "total_battery_pack_charging_status": "charge_status",
+                "eac_today": "generation_today",
+                "eac_total": "generation_total",
+                "eac_month": "generation_month",
+                "eac_year": "generation_year",
+                "ct_self_power": "ct_power",
+                "total_household_load": "household_load",
+                "household_load_apart_from_groplug": "household_load",
+                "battery_package_quantity": "battery_num",
+                "charging_soc_high_limit": "charge_soc_limit",
+                "charging_soc_low_limit": "discharge_soc_limit",
+                "heating_status": "heating",
+                "ppv": "solar_power",
+                "pac": "output_power" if kind == "storage" else "ac_power",
+                "lost": "connectivity",
+                "time_str": "last_update",
+                "last_update_time_text": "last_update",
+                "last_update_time": "last_update",
+                "sys_time": "last_update",
+                "sys_time_text": "last_update",
+            }
+            alias = alias_map.get(key)
+            if alias and alias in out:
+                out.pop(key, None)
+            elif key in (
+                "datalog_sn",
+                "datalogger_sn",
+                "status",
+            ) and ("status_code" in out or "status" in out and key == "status"):
+                if key == "status" and "status_code" in out and out.get("status") == out.get("status_code"):
+                    out.pop("status", None)
+
+        # work_mode: wenn Text-Alias da und raw int gleich key – curated heißt auch work_mode
+        # protect/warn =0 droppen
+        for key in list(out.keys()):
+            if key.endswith(("_protect_status", "_warn_status")) or key in (
+                "ac_couple_protect_status",
+                "ac_couple_warn_status",
+                "mppt_protect_status",
+                "pd_warn_status",
+                "fault_status",
+            ):
+                try:
+                    if float(out[key]) == 0:
+                        out.pop(key, None)
+                except (TypeError, ValueError):
+                    pass
+
+    out.update(meta)
+    return out
+
+
+# Alias-Keys die im useful-Modus immer Kandidaten sind
+_CURATED_KEEP_STORAGE = {
+    "soc",
+    "solar_power",
+    "output_power",
+    "charging_power",
+    "discharge_power",
+    "generation_today",
+    "generation_total",
+    "generation_month",
+    "generation_year",
+    "battery_num",
+    "system_temp",
+    "ct_power",
+    "household_load",
+    "on_grid_power",
+    "off_grid_power",
+    "charge_soc_limit",
+    "discharge_soc_limit",
+    "battery_soh",
+    "battery_cycles",
+    "work_mode",
+    "charge_status",
+    "status_code",
+    "heating",
+    "connectivity",
+    "last_update",
+    "battery1_soc",
+    "battery1_temp",
+    "battery2_soc",
+    "battery2_temp",
+    "battery3_soc",
+    "battery3_temp",
+    "battery4_soc",
+    "battery4_temp",
+    "pv1_power",
+    "pv1_voltage",
+    "pv1_current",
+    "pv2_power",
+    "pv2_voltage",
+    "pv2_current",
+    "pv3_power",
+    "pv3_voltage",
+    "pv3_current",
+    "pv4_power",
+    "pv4_voltage",
+    "pv4_current",
+}
+
+_CURATED_KEEP_MIN = {
+    "ac_power",
+    "ac_power_r",
+    "ac_power_s",
+    "ac_power_t",
+    "energy_today",
+    "energy_total",
+    "energy_today_input_1",
+    "energy_today_input_2",
+    "energy_today_input_3",
+    "energy_today_input_4",
+    "energy_total_input_1",
+    "energy_total_input_2",
+    "energy_total_input_3",
+    "energy_total_input_4",
+    "energy_total_pv",
+    "ppv",
+    "ppv1",
+    "ppv2",
+    "ppv3",
+    "ppv4",
+    "ipv1",
+    "ipv2",
+    "ipv3",
+    "ipv4",
+    "vpv1",
+    "vpv2",
+    "vpv3",
+    "vpv4",
+    "vac1",
+    "vac2",
+    "vac3",
+    "iac1",
+    "iac2",
+    "iac3",
+    "fac",
+    "temperature",
+    "temperature_2",
+    "temperature_3",
+    "temperature_4",
+    "temperature_5",
+    "pf",
+    "export_power",
+    "import_power",
+    "local_load_power",
+    "energy_to_grid_today",
+    "energy_to_grid_total",
+    "energy_to_user_today",
+    "energy_to_user_total",
+    "energy_local_load_today",
+    "energy_local_load_total",
+    "status",
+    "status_code",
+    "connectivity",
+    "last_update",
+}
+
+# Platzhalter – filter nutzt _CURATED_KEEP_*
+SENSOR_META_HINTS = _CURATED_KEEP_STORAGE | _CURATED_KEEP_MIN
+
+
 def merge_device_values(
     energy: dict[str, Any],
     info: dict[str, Any] | None = None,
@@ -304,8 +687,9 @@ def merge_device_values(
     kind: str,
     wifi_dbm: float | None = None,
     serial: str | None = None,
+    mode: str = "useful",
 ) -> dict[str, Any]:
-    """info (Details) + energy (LastData) + freundliche Aliase + optional WLAN."""
+    """info (Details) + energy (LastData) + Aliase, dann Filter (useful/full)."""
     combined = {**(info or {}), **(energy or {})}
     if serial:
         combined.setdefault("deviceSn", serial)
@@ -313,7 +697,6 @@ def merge_device_values(
     if kind == "storage":
         curated = _curated_storage(combined)
         packs = int(curated.get("battery_num") or 1)
-        # Phantom-Packs und °F-Duplikate entfernen
         for i in range(packs + 1, 5):
             for suffix in ("soc", "temp", "temp_f", "serial_num", "protect_status", "warn_status"):
                 flat.pop(f"battery{i}_{suffix}", None)
@@ -325,10 +708,9 @@ def merge_device_values(
     out = {**flat, **curated}
     if wifi_dbm is not None:
         out["wifi_signal"] = wifi_dbm
-    return out
+    return filter_published_values(out, kind=kind, mode=mode)
 
 
-# Rückwärtskompatible Namen
 def normalize_storage(raw: dict[str, Any], info: dict[str, Any] | None = None) -> dict[str, Any]:
     return merge_device_values(raw, info, kind="storage")
 

@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -81,6 +81,10 @@ class Bridge:
             int(env_or(opts, "poll_inverter_seconds", MIN_INTERVAL_OTHER_S)),
         )
         self.poll_devices_s = max(300, int(env_or(opts, "poll_devices_seconds", 3600)))
+        self.sensor_mode = str(env_or(opts, "sensor_mode", "useful")).strip().lower() or "useful"
+        if self.sensor_mode not in ("useful", "full"):
+            LOG.warning("sensor_mode=%s ungültig – nutze useful", self.sensor_mode)
+            self.sensor_mode = "useful"
 
         self.mqtt = HaMqtt(
             host=str(env_or(opts, "mqtt_host", "core-mosquitto")),
@@ -143,7 +147,9 @@ class Bridge:
             wifi = self.api.wifi_strength(sn, api_type, min_interval_s=INFO_INTERVAL_S)
         except GrowattApiError as exc:
             LOG.debug("WiFi %s: %s", sn, exc)
-        return merge_device_values(energy, info, kind=kind, wifi_dbm=wifi, serial=sn)
+        return merge_device_values(
+            energy, info, kind=kind, wifi_dbm=wifi, serial=sn, mode=self.sensor_mode
+        )
 
     def poll_storage(self) -> None:
         now = time.monotonic()
@@ -202,7 +208,7 @@ class Bridge:
                     self._last_inverter[sn] = time.monotonic()
 
     def run(self) -> None:
-        LOG.info("growatt_cloud %s start (Geräte auto aus API)", VERSION)
+        LOG.info("growatt_cloud %s start (Geräte auto, sensor_mode=%s)", VERSION, self.sensor_mode)
         self.mqtt.connect()
         if not self.mqtt.wait_connected(5):
             LOG.warning("Starte Poll-Loop trotzdem – MQTT-Reconnect läuft im Hintergrund")

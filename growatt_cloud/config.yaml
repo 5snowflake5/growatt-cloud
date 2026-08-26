@@ -1,5 +1,5 @@
 name: Growatt Cloud
-version: "0.1.6"
+version: "0.1.7"
 slug: growatt_cloud
 description: >-
   Noah/Nexa + MIN-Wechselrichter über Growatt Open API (ein Token, v4).
@@ -20,6 +20,7 @@ options:
   poll_storage_seconds: 60
   poll_inverter_seconds: 300
   poll_devices_seconds: 3600
+  sensor_mode: useful
   mqtt_host: core-mosquitto
   mqtt_port: 1883
   mqtt_user: ""
@@ -33,6 +34,7 @@ schema:
   poll_storage_seconds: int(60,3600)
   poll_inverter_seconds: int(300,7200)
   poll_devices_seconds: int(300,86400)
+  sensor_mode: list(useful|full)
   mqtt_host: str
   mqtt_port: port
   mqtt_user: str
