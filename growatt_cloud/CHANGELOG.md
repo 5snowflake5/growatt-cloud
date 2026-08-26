@@ -4,6 +4,13 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.14] – 2026-08-26
+
+### Changed
+- Energy-Limit wieder **pro Geräte-SN** (Noah und Nexa dürfen beide ~1/min) – der globale 1-Slot war zu streng.
+- Kurze Pause zwischen Requests bleibt, damit Bursts keinen code 102 auslösen.
+- Info/WiFi weiterhin ohne Energy-Slot; beide Speicher werden wieder je Zyklus gepollt wenn fällig.
+
 ## [0.1.13] – 2026-08-26
 
 ### Fixed

@@ -42,9 +42,7 @@ class GrowattCloudApi:
         self._last_wifi: dict[str, float] = {}
         self._info_cache: dict[str, dict[str, Any]] = {}
         self._wifi_cache: dict[str, float] = {}
-        # Nur queryLastData teilt sich den strengen Energy-Slot (Noah 60s / andere 300s)
-        self._last_noah_energy = 0.0
-        self._last_other_energy = 0.0
+        # Energy-Limit pro Gerät (Noah/Nexa: 60s je SN, andere: 300s je SN)
         self._last_aux = 0.0
         self._backoff_until = 0.0
 
@@ -102,24 +100,20 @@ class GrowattCloudApi:
         if now < self._backoff_until:
             time.sleep(self._backoff_until - now)
 
-    def _wait_energy_slot(self, dtype: str) -> None:
-        """Nur für queryLastData – Noah/Nexa teilen sich 1 Slot/Min."""
+    def _wait_energy_slot(self, dtype: str, device_sn: str) -> None:
+        """Energy-Limit pro Gerät – Noah und Nexa dürfen parallel (je SN 1/min)."""
         self._wait_backoff()
+        key = f"{dtype}:{device_sn}"
         now = time.monotonic()
-        if dtype == "noah":
-            wait = MIN_INTERVAL_NOAH_S - (now - self._last_noah_energy)
-        else:
-            wait = MIN_INTERVAL_OTHER_S - (now - self._last_other_energy)
+        min_interval = MIN_INTERVAL_NOAH_S if dtype == "noah" else MIN_INTERVAL_OTHER_S
+        last = self._last_energy.get(key, 0.0)
+        wait = min_interval - (now - last)
         if wait > 0:
-            LOG.info("Energy-Slot warte %.0fs (type=%s, Fair-Share bei mehreren Geräten)", wait, dtype)
+            LOG.debug("Energy-Slot %s warte %.0fs", key, wait)
             time.sleep(wait)
 
-    def _mark_energy_slot(self, dtype: str) -> None:
-        now = time.monotonic()
-        if dtype == "noah":
-            self._last_noah_energy = now
-        else:
-            self._last_other_energy = now
+    def _mark_energy_slot(self, dtype: str, device_sn: str) -> None:
+        self._last_energy[f"{dtype}:{device_sn}"] = time.monotonic()
 
     def _wait_aux_slot(self) -> None:
         """Kurze Pause für DeviceInfo/WiFi – verbraucht keinen Energy-Slot."""
@@ -146,16 +140,18 @@ class GrowattCloudApi:
         return [r for r in rows if isinstance(r, dict)]
 
     def query_last_data(self, device_sn: str, device_type: str) -> dict[str, Any]:
-        """Live-Messwerte. device_type z.B. noah | min."""
+        """Live-Messwerte. Limit pro Geräte-SN (Noah/Nexa je 1/min)."""
         dtype = self._normalize_type(device_type)
-        self._wait_energy_slot(dtype)
+        self._wait_energy_slot(dtype, device_sn)
+        # kurze Pause zwischen Requests, damit Bursts keinen 102 auslösen
+        self._wait_aux_slot()
         payload = self._request(
             "POST",
             "new-api/queryLastData",
             params={"deviceSn": device_sn, "deviceType": dtype},
         )
-        self._mark_energy_slot(dtype)
-        self._last_energy[f"{dtype}:{device_sn}"] = time.monotonic()
+        self._mark_aux_slot()
+        self._mark_energy_slot(dtype, device_sn)
         return self._unwrap_device_block(payload, dtype)
 
     @staticmethod
