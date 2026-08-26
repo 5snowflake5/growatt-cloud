@@ -12,6 +12,94 @@ from typing import Any
 
 LOG = logging.getLogger("growatt-cloud.mqtt")
 
+# object_id → (name, unit|None, device_class|None, state_class|None, component)
+# component: sensor | binary_sensor
+SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
+    # Speicher (noah-mqtt Parität + Extras)
+    "soc": ("SoC", "%", "battery", "measurement", "sensor"),
+    "solar_power": ("Solar Power", "W", "power", "measurement", "sensor"),
+    "output_power": ("Output Power", "W", "power", "measurement", "sensor"),
+    "charging_power": ("Charging Power", "W", "power", "measurement", "sensor"),
+    "discharge_power": ("Discharge Power", "W", "power", "measurement", "sensor"),
+    "generation_today": ("Generation Today", "kWh", "energy", "total_increasing", "sensor"),
+    "generation_total": ("Generation Total", "kWh", "energy", "total_increasing", "sensor"),
+    "generation_month": ("Generation Month", "kWh", "energy", "total_increasing", "sensor"),
+    "generation_year": ("Generation Year", "kWh", "energy", "total_increasing", "sensor"),
+    "battery_num": ("Number Of Batteries", None, None, "measurement", "sensor"),
+    "system_temp": ("System Temperature", "°C", "temperature", "measurement", "sensor"),
+    "ct_power": ("CT Power", "W", "power", "measurement", "sensor"),
+    "household_load": ("Household Load", "W", "power", "measurement", "sensor"),
+    "on_grid_power": ("On Grid Power", "W", "power", "measurement", "sensor"),
+    "off_grid_power": ("Off Grid Power", "W", "power", "measurement", "sensor"),
+    "charge_soc_limit": ("Charging Limit", "%", "battery", "measurement", "sensor"),
+    "discharge_soc_limit": ("Discharge Limit", "%", "battery", "measurement", "sensor"),
+    "battery_soh": ("Battery SOH", "%", "battery", "measurement", "sensor"),
+    "battery_cycles": ("Battery Cycles", None, None, "total_increasing", "sensor"),
+    "work_mode": ("Work Mode", None, None, None, "sensor"),
+    "work_mode_code": ("Work Mode Code", None, None, "measurement", "sensor"),
+    "charge_status": ("Charge Status", None, None, None, "sensor"),
+    "status_code": ("Status Code", None, None, "measurement", "sensor"),
+    "heating": ("Heating", None, None, None, "binary_sensor"),
+    "connectivity": ("Connectivity", None, "connectivity", None, "binary_sensor"),
+    "battery1_soc": ("Battery 1 SoC", "%", "battery", "measurement", "sensor"),
+    "battery1_temp": ("Battery 1 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "battery2_soc": ("Battery 2 SoC", "%", "battery", "measurement", "sensor"),
+    "battery2_temp": ("Battery 2 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "battery3_soc": ("Battery 3 SoC", "%", "battery", "measurement", "sensor"),
+    "battery3_temp": ("Battery 3 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "battery4_soc": ("Battery 4 SoC", "%", "battery", "measurement", "sensor"),
+    "battery4_temp": ("Battery 4 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "pv1_power": ("PV1 Power", "W", "power", "measurement", "sensor"),
+    "pv1_voltage": ("PV1 Voltage", "V", "voltage", "measurement", "sensor"),
+    "pv1_current": ("PV1 Current", "A", "current", "measurement", "sensor"),
+    "pv2_power": ("PV2 Power", "W", "power", "measurement", "sensor"),
+    "pv2_voltage": ("PV2 Voltage", "V", "voltage", "measurement", "sensor"),
+    "pv2_current": ("PV2 Current", "A", "current", "measurement", "sensor"),
+    "pv3_power": ("PV3 Power", "W", "power", "measurement", "sensor"),
+    "pv3_voltage": ("PV3 Voltage", "V", "voltage", "measurement", "sensor"),
+    "pv3_current": ("PV3 Current", "A", "current", "measurement", "sensor"),
+    "pv4_power": ("PV4 Power", "W", "power", "measurement", "sensor"),
+    "pv4_voltage": ("PV4 Voltage", "V", "voltage", "measurement", "sensor"),
+    "pv4_current": ("PV4 Current", "A", "current", "measurement", "sensor"),
+    # Wechselrichter
+    "ac_power": ("AC Power", "W", "power", "measurement", "sensor"),
+    "ac_power_r": ("AC Power R", "W", "power", "measurement", "sensor"),
+    "energy_today": ("Energy Today", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_total": ("Energy Total", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_today_input_1": ("Energy Today Input 1", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_today_input_2": ("Energy Today Input 2", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_today_input_3": ("Energy Today Input 3", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_today_input_4": ("Energy Today Input 4", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_total_input_1": ("Energy Total Input 1", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_total_input_2": ("Energy Total Input 2", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_total_pv": ("Energy Total PV", "kWh", "energy", "total_increasing", "sensor"),
+    "ppv": ("PV Power", "W", "power", "measurement", "sensor"),
+    "ppv1": ("PV Power Input 1", "W", "power", "measurement", "sensor"),
+    "ppv2": ("PV Power Input 2", "W", "power", "measurement", "sensor"),
+    "ppv3": ("PV Power Input 3", "W", "power", "measurement", "sensor"),
+    "ppv4": ("PV Power Input 4", "W", "power", "measurement", "sensor"),
+    "ipv1": ("PV Current Input 1", "A", "current", "measurement", "sensor"),
+    "ipv2": ("PV Current Input 2", "A", "current", "measurement", "sensor"),
+    "vpv1": ("PV Voltage Input 1", "V", "voltage", "measurement", "sensor"),
+    "vpv2": ("PV Voltage Input 2", "V", "voltage", "measurement", "sensor"),
+    "vac1": ("Grid Voltage", "V", "voltage", "measurement", "sensor"),
+    "iac1": ("Grid Current", "A", "current", "measurement", "sensor"),
+    "fac": ("Grid Frequency", "Hz", "frequency", "measurement", "sensor"),
+    "temperature": ("Temperature", "°C", "temperature", "measurement", "sensor"),
+    "temperature_2": ("Temperature 2", "°C", "temperature", "measurement", "sensor"),
+    "pf": ("Power Factor", None, "power_factor", "measurement", "sensor"),
+    "export_power": ("Export Power", "W", "power", "measurement", "sensor"),
+    "import_power": ("Import Power", "W", "power", "measurement", "sensor"),
+    "local_load_power": ("Local Load Power", "W", "power", "measurement", "sensor"),
+    "energy_to_grid_today": ("Energy To Grid Today", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_to_grid_total": ("Energy To Grid Total", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_to_user_today": ("Energy From Grid Today", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_to_user_total": ("Energy From Grid Total", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_local_load_today": ("Local Load Today", "kWh", "energy", "total_increasing", "sensor"),
+    "energy_local_load_total": ("Local Load Total", "kWh", "energy", "total_increasing", "sensor"),
+    "status": ("Status", None, None, None, "sensor"),
+}
+
 
 def slug(value: str) -> str:
     text = re.sub(r"[^a-zA-Z0-9_]+", "_", (value or "").strip().lower())
@@ -35,7 +123,7 @@ class HaMqtt:
         self.discovery_prefix = discovery_prefix.rstrip("/") or "homeassistant"
         self.state_prefix = state_prefix.rstrip("/") or "growatt_cloud"
         self._client = None
-        self._discovery_done: set[str] = set()
+        self._discovery_sig: dict[str, str] = {}
         self._connected = threading.Event()
 
     def connect(self) -> None:
@@ -58,7 +146,7 @@ class HaMqtt:
         def on_connect(c, _u, _f, rc, *_a):
             if rc == 0:
                 LOG.info("MQTT verbunden (%s:%s)", self.host, self.port)
-                self._discovery_done.clear()
+                self._discovery_sig.clear()
                 c.publish(f"{self.state_prefix}/status", "online", retain=True)
                 self._connected.set()
             else:
@@ -98,7 +186,6 @@ class HaMqtt:
 
     def _pub(self, topic: str, payload: str, retain: bool = True) -> None:
         if not self._client:
-            LOG.debug("MQTT publish übersprungen (kein Client): %s", topic)
             return
         if not self._connected.is_set():
             self._connected.wait(2)
@@ -115,68 +202,19 @@ class HaMqtt:
             "serial_number": serial,
         }
 
-    def ensure_storage_discovery(self, serial: str, label: str) -> None:
-        key = f"storage:{serial}"
-        if key in self._discovery_done:
+    def ensure_discovery(self, serial: str, label: str, values: dict[str, Any]) -> None:
+        """Discovery aus tatsächlichen Keys – Batterie-Packs etc. erscheinen nach dem ersten Poll."""
+        keys = sorted(k for k in values if k in SENSOR_META)
+        sig = f"{label}|{'|'.join(keys)}"
+        if self._discovery_sig.get(serial) == sig:
             return
         device = self._device(serial, serial, f"Growatt {label}")
-        sensors = [
-            ("soc", "SoC", "%", "battery", "measurement"),
-            ("solar_power", "Solar Power", "W", "power", "measurement"),
-            ("output_power", "Output Power", "W", "power", "measurement"),
-            ("charging_power", "Charging Power", "W", "power", "measurement"),
-            ("discharge_power", "Discharge Power", "W", "power", "measurement"),
-            ("generation_today", "Generation Today", "kWh", "energy", "total_increasing"),
-            ("generation_total", "Generation Total", "kWh", "energy", "total_increasing"),
-            ("system_temp", "System Temperature", "°C", "temperature", "measurement"),
-            ("ct_power", "CT Power", "W", "power", "measurement"),
-            ("work_mode", "Work Mode", None, None, "measurement"),
-            ("status", "Status", None, None, "measurement"),
-        ]
-        self._publish_sensor_discovery(serial, device, sensors)
-        self._discovery_done.add(key)
-        LOG.info(
-            "HA-Discovery %s %s (%s Sensoren unter homeassistant/sensor/%s/…)",
-            label,
-            serial,
-            len(sensors),
-            slug(serial),
-        )
-
-    def ensure_inverter_discovery(self, serial: str) -> None:
-        key = f"min:{serial}"
-        if key in self._discovery_done:
-            return
-        device = self._device(serial, serial, "Growatt MIN")
-        sensors = [
-            ("ac_power", "AC Power", "W", "power", "measurement"),
-            ("energy_today", "Energy Today", "kWh", "energy", "total_increasing"),
-            ("energy_total", "Energy Total", "kWh", "energy", "total_increasing"),
-            ("energy_today_input_1", "Energy Today Input 1", "kWh", "energy", "total_increasing"),
-            ("energy_today_input_2", "Energy Today Input 2", "kWh", "energy", "total_increasing"),
-            ("ppv", "PV Power", "W", "power", "measurement"),
-            ("ppv1", "PV Power Input 1", "W", "power", "measurement"),
-            ("ppv2", "PV Power Input 2", "W", "power", "measurement"),
-        ]
-        self._publish_sensor_discovery(serial, device, sensors)
-        self._discovery_done.add(key)
-        LOG.info(
-            "HA-Discovery Wechselrichter %s (%s Sensoren unter homeassistant/sensor/%s/…)",
-            serial,
-            len(sensors),
-            slug(serial),
-        )
-
-    def _publish_sensor_discovery(
-        self,
-        serial: str,
-        device: dict[str, Any],
-        sensors: list[tuple],
-    ) -> None:
         node = slug(serial)
-        for object_id, name, unit, device_class, state_class in sensors:
+        count = 0
+        for object_id in keys:
+            name, unit, device_class, state_class, component = SENSOR_META[object_id]
             unique = f"growatt_cloud_{node}_{object_id}"
-            topic = f"{self.discovery_prefix}/sensor/{node}/{object_id}/config"
+            topic = f"{self.discovery_prefix}/{component}/{node}/{object_id}/config"
             state_topic = f"{self.state_prefix}/{node}/{object_id}"
             payload: dict[str, Any] = {
                 "name": name,
@@ -188,6 +226,9 @@ class HaMqtt:
                 "payload_available": "online",
                 "payload_not_available": "offline",
             }
+            if component == "binary_sensor":
+                payload["payload_on"] = "ON"
+                payload["payload_off"] = "OFF"
             if unit:
                 payload["unit_of_measurement"] = unit
             if device_class:
@@ -197,14 +238,56 @@ class HaMqtt:
             if device_class == "energy":
                 payload["state_class"] = "total_increasing"
             self._pub(topic, json.dumps(payload), retain=True)
-            self._pub(state_topic, "0" if unit else "unknown", retain=True)
+            count += 1
+        self._discovery_sig[serial] = sig
         self._pub(f"{self.state_prefix}/status", "online", retain=True)
-        time.sleep(0.2)
+        LOG.info("HA-Discovery %s %s → %s Entities", label, serial, count)
+        time.sleep(0.15)
+
+    # Rückwärtskompatibel für frühen Aufruf ohne Werte
+    def ensure_storage_discovery(self, serial: str, label: str) -> None:
+        self.ensure_discovery(
+            serial,
+            label,
+            {
+                "soc": 0,
+                "solar_power": 0,
+                "output_power": 0,
+                "charging_power": 0,
+                "discharge_power": 0,
+                "generation_today": 0,
+                "generation_total": 0,
+                "battery_num": 1,
+                "system_temp": 0,
+                "ct_power": 0,
+                "work_mode": "unknown",
+                "heating": "OFF",
+                "connectivity": "ON",
+            },
+        )
+
+    def ensure_inverter_discovery(self, serial: str) -> None:
+        self.ensure_discovery(
+            serial,
+            "Wechselrichter",
+            {
+                "ac_power": 0,
+                "energy_today": 0,
+                "energy_total": 0,
+                "energy_today_input_1": 0,
+                "energy_today_input_2": 0,
+                "ppv": 0,
+                "ppv1": 0,
+                "ppv2": 0,
+                "connectivity": "ON",
+                "status": "unknown",
+            },
+        )
 
     def publish_states(self, serial: str, values: dict[str, Any]) -> None:
         node = slug(serial)
         for key, value in values.items():
-            if key in ("family", "label", "time"):
+            if key in ("family", "label", "time") or key not in SENSOR_META:
                 continue
             if value is None:
                 continue
