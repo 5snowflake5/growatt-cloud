@@ -4,6 +4,11 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.17] – 2026-08-26
+
+### Fixed
+- SyntaxError in `poll_storage` (falsches Indent beim Log) – Addon startete nicht mehr.
+
 ## [0.1.16] – 2026-08-26
 
 ### Fixed
