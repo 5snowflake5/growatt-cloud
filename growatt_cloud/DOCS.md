@@ -50,4 +50,20 @@ Entity-IDs weichen von noah-mqtt ab (`growatt_cloud_…`). Lovelace ggf. anpasse
 3. Diese App starten, Log prüfen (`Gerät: sn=… type=noah`)  
 4. MQTT-Gerät unter Einstellungen → Geräte  
 
-Optional: `storage_sn` / `inverter_sn` fest setzen, sonst Auto-Detect aus der Geräteliste.
+## Geräte
+
+Serials und Noah/Nexa werden **automatisch** aus der Growatt-Geräteliste erkannt.
+Kein manuelles Eintragen nötig.
+
+## Sensoren
+
+Nach dem ersten erfolgreichen Poll erscheinen u. a.:
+
+**Speicher (Noah/Nexa):** SoC, Solar/Charge/Discharge/Output, Generation Today/Total/Month/Year,
+Battery-Packs (SoC+Temp), PV1–4, Limits, Heating, Connectivity, Work Mode, …  
+
+**MIN-WR:** AC Power, Energy Today/Total, Input 1–4, PV, Spannung/Strom/Frequenz,
+Export/Import/Local Load, Temperaturen, …
+
+Die genaue Anzahl hängt davon ab, was die API für dein Gerät liefert
+(z. B. 1 vs. 2 Batterie-Packs).
