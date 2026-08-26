@@ -4,6 +4,12 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.21] – 2026-08-26
+
+### Changed
+- PV3/PV4 bleiben sichtbar, **ohne** Tower-/Speicher-Label (nur „PV3 Power“ usw.).
+- Speicher‑2‑PV weiter = Solar − PV1 − PV2.
+
 ## [0.1.20] – 2026-08-26
 
 ### Changed
