@@ -12,6 +12,17 @@ Ersatz für die Combo `noah-mqtt` + Growatt-Server-Integration (Doppel-Login, Ac
 
 Images kommen von GHCR (kein Build auf dem Pi).
 
+## Releases (wichtig)
+
+Home Assistant liest die Version aus `config.yaml` im Git-Repo. Damit kein Update erscheint, bevor das Image da ist:
+
+1. Code nach `master` pushen → baut nur Preview-Tags `edge` / `sha-…`  
+2. **GitHub → Actions → „Release add-on“ → Run workflow** mit Version z. B. `0.1.24`  
+3. Workflow: Image pushen → **erst danach** Versionsbump committen  
+4. Dann in HA updaten
+
+Nicht die Versionsnummer in `config.yaml` von Hand hochsetzen und pushen – sonst wieder Race.
+
 ## Kurz
 
 - Token von [openapi.growatt.com](https://openapi.growatt.com) (Account → API Token)
