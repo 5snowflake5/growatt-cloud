@@ -1,11 +1,13 @@
 # Growatt Cloud – Auswertung (Sections-View)
 # Dashboard → ⋮ → Rohkonfiguration → Inhalt unter `views:` ersetzen.
 #
-# Geräte (growatt_cloud MQTT):
-#   Noah  0PVP00ED26UT03E9  → sensor.0pvp00ed26ut03e9_*
-#   Nexa  0HVRD0ZR247T000V  → sensor.0hvrd0zr247t000v_*
-#   WR    BZP4NXX18C        → sensor.bzp4nxx18c_*
-# Speicher-2-PV = Solar − PV1 − PV2 (solar_power_tower2)
+# Entity-IDs ab Addon 0.1.23 (Präfix gc_):
+#   Noah  → sensor.gc_0pvp00ed26ut03e9_*
+#   Nexa  → sensor.gc_0hvrd0zr247t000v_*
+#   WR    → sensor.gc_bzp4nxx18c_*
+#
+# Vorher in Entwicklerwerkzeuge → Zustände nach „gc_0pvp“ suchen.
+# Wenn noch ohne gc_: Addon auf 0.1.23 updaten und einmal neu starten.
 
 views:
   - type: sections
@@ -19,7 +21,7 @@ views:
             heading: Noah – jetzt
             heading_style: title
           - type: gauge
-            entity: sensor.0pvp00ed26ut03e9_soc
+            entity: sensor.gc_0pvp00ed26ut03e9_soc
             name: SoC gesamt
             min: 0
             max: 100
@@ -29,30 +31,30 @@ views:
               yellow: 20
               green: 40
           - type: gauge
-            entity: sensor.0pvp00ed26ut03e9_battery1_soc
+            entity: sensor.gc_0pvp00ed26ut03e9_battery1_soc
             name: Batterie 1
             min: 0
             max: 100
             needle: true
           - type: gauge
-            entity: sensor.0pvp00ed26ut03e9_battery2_soc
+            entity: sensor.gc_0pvp00ed26ut03e9_battery2_soc
             name: Batterie 2
             min: 0
             max: 100
             needle: true
           - type: entities
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_solar_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power
                 name: Solar gesamt
-              - entity: sensor.0pvp00ed26ut03e9_solar_power_tower1
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_tower1
                 name: Solar Speicher 1 (PV1+PV2)
-              - entity: sensor.0pvp00ed26ut03e9_solar_power_tower2
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_tower2
                 name: Solar Speicher 2 (Rest)
-              - entity: sensor.0pvp00ed26ut03e9_output_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_output_power
                 name: Abgabe
-              - entity: sensor.0pvp00ed26ut03e9_charging_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_charging_power
                 name: Laden
-              - entity: sensor.0pvp00ed26ut03e9_discharge_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_discharge_power
                 name: Entladen
         column_span: 2
 
@@ -63,14 +65,14 @@ views:
             heading_style: title
           - type: markdown
             content: |
-              {% set total = states('sensor.0pvp00ed26ut03e9_generation_today') | float(0) %}
-              {% set s1 = states('sensor.0pvp00ed26ut03e9_generation_today_tower1') | float(0) %}
-              {% set s2 = states('sensor.0pvp00ed26ut03e9_generation_today_tower2') | float(0) %}
+              {% set total = states('sensor.gc_0pvp00ed26ut03e9_generation_today') | float(0) %}
+              {% set s1 = states('sensor.gc_0pvp00ed26ut03e9_generation_today_tower1') | float(0) %}
+              {% set s2 = states('sensor.gc_0pvp00ed26ut03e9_generation_today_tower2') | float(0) %}
               {% set sum = s1 + s2 %}
-              {% set live = states('sensor.0pvp00ed26ut03e9_solar_power') | float(0) %}
-              {% set p1 = states('sensor.0pvp00ed26ut03e9_pv1_power') | float(0) %}
-              {% set p2 = states('sensor.0pvp00ed26ut03e9_pv2_power') | float(0) %}
-              {% set rest = states('sensor.0pvp00ed26ut03e9_solar_power_tower2') | float(0) %}
+              {% set live = states('sensor.gc_0pvp00ed26ut03e9_solar_power') | float(0) %}
+              {% set p1 = states('sensor.gc_0pvp00ed26ut03e9_pv1_power') | float(0) %}
+              {% set p2 = states('sensor.gc_0pvp00ed26ut03e9_pv2_power') | float(0) %}
+              {% set rest = states('sensor.gc_0pvp00ed26ut03e9_solar_power_tower2') | float(0) %}
 
               **Growatt Generation Today:** {{ total | round(2) }} kWh  
               **Speicher 1 (integriert):** {{ s1 | round(2) }} kWh  
@@ -83,13 +85,13 @@ views:
               Gesamt {{ live | round(0) }} W
           - type: entities
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_generation_today
+              - entity: sensor.gc_0pvp00ed26ut03e9_generation_today
                 name: Generation Today (API)
-              - entity: sensor.0pvp00ed26ut03e9_generation_today_tower1
+              - entity: sensor.gc_0pvp00ed26ut03e9_generation_today_tower1
                 name: Generation Today Speicher 1
-              - entity: sensor.0pvp00ed26ut03e9_generation_today_tower2
+              - entity: sensor.gc_0pvp00ed26ut03e9_generation_today_tower2
                 name: Generation Today Speicher 2
-              - entity: sensor.0pvp00ed26ut03e9_generation_total
+              - entity: sensor.gc_0pvp00ed26ut03e9_generation_total
                 name: Generation Total
         column_span: 2
 
@@ -102,13 +104,13 @@ views:
             title: PV1 · PV2 · Speicher 2 · Gesamt
             hours_to_show: 24
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_pv1_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_pv1_power
                 name: PV1
-              - entity: sensor.0pvp00ed26ut03e9_pv2_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_pv2_power
                 name: PV2
-              - entity: sensor.0pvp00ed26ut03e9_solar_power_tower2
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_tower2
                 name: Speicher 2
-              - entity: sensor.0pvp00ed26ut03e9_solar_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power
                 name: Gesamt
         column_span: 4
 
@@ -121,27 +123,27 @@ views:
             title: PV1
             hours_to_show: 24
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_pv1_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_pv1_power
                 name: PV1
           - type: history-graph
             title: PV2
             hours_to_show: 24
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_pv2_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_pv2_power
                 name: PV2
           - type: history-graph
             title: Speicher 2 (Rest)
             hours_to_show: 24
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_solar_power_tower2
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_tower2
                 name: Speicher 2
           - type: history-graph
             title: PV3 / PV4 (API, oft 0)
             hours_to_show: 24
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_pv3_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_pv3_power
                 name: PV3
-              - entity: sensor.0pvp00ed26ut03e9_pv4_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_pv4_power
                 name: PV4
         column_span: 4
 
@@ -154,23 +156,23 @@ views:
             title: Solar · Laden · Entladen · Abgabe
             hours_to_show: 24
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_solar_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power
                 name: Solar
-              - entity: sensor.0pvp00ed26ut03e9_charging_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_charging_power
                 name: Laden
-              - entity: sensor.0pvp00ed26ut03e9_discharge_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_discharge_power
                 name: Entladen
-              - entity: sensor.0pvp00ed26ut03e9_output_power
+              - entity: sensor.gc_0pvp00ed26ut03e9_output_power
                 name: Abgabe
           - type: history-graph
             title: SoC Batterie 1 / 2
             hours_to_show: 24
             entities:
-              - entity: sensor.0pvp00ed26ut03e9_battery1_soc
+              - entity: sensor.gc_0pvp00ed26ut03e9_battery1_soc
                 name: Bat 1
-              - entity: sensor.0pvp00ed26ut03e9_battery2_soc
+              - entity: sensor.gc_0pvp00ed26ut03e9_battery2_soc
                 name: Bat 2
-              - entity: sensor.0pvp00ed26ut03e9_soc
+              - entity: sensor.gc_0pvp00ed26ut03e9_soc
                 name: Gesamt
         column_span: 4
 
@@ -180,26 +182,26 @@ views:
             heading: Nexa
             heading_style: title
           - type: gauge
-            entity: sensor.0hvrd0zr247t000v_soc
+            entity: sensor.gc_0hvrd0zr247t000v_soc
             name: Nexa SoC
             min: 0
             max: 100
             needle: true
           - type: entities
             entities:
-              - entity: sensor.0hvrd0zr247t000v_solar_power
+              - entity: sensor.gc_0hvrd0zr247t000v_solar_power
                 name: Solar
-              - entity: sensor.0hvrd0zr247t000v_output_power
+              - entity: sensor.gc_0hvrd0zr247t000v_output_power
                 name: Abgabe
-              - entity: sensor.0hvrd0zr247t000v_generation_today
+              - entity: sensor.gc_0hvrd0zr247t000v_generation_today
                 name: Heute
           - type: history-graph
             title: Nexa Solar / Abgabe
             hours_to_show: 24
             entities:
-              - entity: sensor.0hvrd0zr247t000v_solar_power
+              - entity: sensor.gc_0hvrd0zr247t000v_solar_power
                 name: Solar
-              - entity: sensor.0hvrd0zr247t000v_output_power
+              - entity: sensor.gc_0hvrd0zr247t000v_output_power
                 name: Abgabe
         column_span: 2
 
@@ -212,24 +214,24 @@ views:
             title: AC Output
             hours_to_show: 24
             entities:
-              - entity: sensor.bzp4nxx18c_ac_power
+              - entity: sensor.gc_bzp4nxx18c_ac_power
                 name: AC
           - type: history-graph
             title: WR PV Input
             hours_to_show: 24
             entities:
-              - entity: sensor.bzp4nxx18c_ppv
+              - entity: sensor.gc_bzp4nxx18c_ppv
                 name: PV gesamt
-              - entity: sensor.bzp4nxx18c_ppv1
+              - entity: sensor.gc_bzp4nxx18c_ppv1
                 name: PPV1
-              - entity: sensor.bzp4nxx18c_ppv2
+              - entity: sensor.gc_bzp4nxx18c_ppv2
                 name: PPV2
           - type: markdown
             title: WR heute
             content: |
-              {% set ac = states('sensor.bzp4nxx18c_energy_today') | float(0) %}
-              {% set i1 = states('sensor.bzp4nxx18c_energy_today_input_1') | float(0) %}
-              {% set i2 = states('sensor.bzp4nxx18c_energy_today_input_2') | float(0) %}
+              {% set ac = states('sensor.gc_bzp4nxx18c_energy_today') | float(0) %}
+              {% set i1 = states('sensor.gc_bzp4nxx18c_energy_today_input_1') | float(0) %}
+              {% set i2 = states('sensor.gc_bzp4nxx18c_energy_today_input_2') | float(0) %}
               {% set pv = i1 + i2 %}
               {% set loss = pv - ac %}
               {% set pct = (loss / pv * 100) if pv > 0 else 0 %}

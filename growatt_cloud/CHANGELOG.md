@@ -4,6 +4,12 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.23] – 2026-08-26
+
+### Fixed
+- Stabile Entity-IDs: `sensor.gc_<serial>_<sensor>` (nicht mehr mit Ziffer starten – HA fand sonst „Entity not found“).
+- Lovelace-View entsprechend angepasst.
+
 ## [0.1.22] – 2026-08-26
 
 ### Removed
