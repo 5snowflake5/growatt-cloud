@@ -248,7 +248,7 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
         out[f"battery{i}_soc"] = soc if soc is not None else 0.0
         out[f"battery{i}_temp"] = temp if temp is not None else 0.0
 
-    # Immer alle 4 PV-Strings (auch 0) – zweiter Turm / String 3–4 sonst weggefiltert
+    # Immer alle 4 PV-Strings (auch 0 W). Bei 2-Turm-Stack: PV3/PV4 = oft Turm 2.
     for i in range(1, 5):
         v = _num(raw, f"pv{i}Voltage", f"pv{i}_voltage", default=0.0) or 0.0
         a = _num(raw, f"pv{i}Current", f"pv{i}_current", default=0.0) or 0.0
@@ -860,6 +860,22 @@ def filter_published_values(
             _prune_min_noise(out, aggressive=True)
 
     out.update(meta)
+    # Speicher: PV1–4 nach dem Filter nochmal erzwingen (dürfen nie wegfallen)
+    if kind == "storage":
+        for i in range(1, 5):
+            for suffix, default in (
+                ("power", 0.0),
+                ("voltage", 0.0),
+                ("current", 0.0),
+            ):
+                key = f"pv{i}_{suffix}"
+                if key not in out and key in values:
+                    out[key] = values[key]
+                elif key not in out:
+                    out[key] = default
+            tkey = f"pv{i}_temp"
+            if tkey in values and values[tkey] is not None:
+                out[tkey] = values[tkey]
     return out
 
 

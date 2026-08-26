@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.15"
+VERSION = "0.1.16"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -171,18 +171,22 @@ class Bridge:
                 self.mqtt.publish_states(sn, values)
                 self._last_storage[sn] = time.monotonic()
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
-                LOG.info(
-                    "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh packs=%s mode=%s entities=%s",
-                    values["label"],
-                    sn,
-                    values.get("soc"),
-                    values.get("solar_power") or 0,
-                    values.get("output_power") or 0,
-                    values.get("generation_today") or 0,
-                    values.get("battery_num"),
-                    self.sensor_mode,
-                    entity_n,
-                )
+            LOG.info(
+                "%s %s SoC=%s%% PV=%.0fW (1=%.0f 2=%.0f 3=%.0f 4=%.0f) Out=%.0fW Today=%.2fkWh packs=%s mode=%s entities=%s",
+                values["label"],
+                sn,
+                values.get("soc"),
+                values.get("solar_power") or 0,
+                values.get("pv1_power") or 0,
+                values.get("pv2_power") or 0,
+                values.get("pv3_power") or 0,
+                values.get("pv4_power") or 0,
+                values.get("output_power") or 0,
+                values.get("generation_today") or 0,
+                values.get("battery_num"),
+                self.sensor_mode,
+                entity_n,
+            )
             except GrowattApiError as exc:
                 LOG.error("Speicher %s: %s", sn, exc)
                 if exc.code in (100, 102, 10012):

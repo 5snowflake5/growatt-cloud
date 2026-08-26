@@ -4,6 +4,12 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.16] – 2026-08-26
+
+### Fixed
+- Noah 2-Turm-Stack: **PV3/PV4** (Turm 2) bleiben fest als Entities – auch bei 0 W, mit Namen „Tower 2“.
+- PV1/PV2 als „Tower 1“; Log zeigt PV1–4 einzeln.
+
 ## [0.1.15] – 2026-08-26
 
 ### Fixed
