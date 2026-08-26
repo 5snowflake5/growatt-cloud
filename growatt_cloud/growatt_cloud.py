@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.11"
+VERSION = "0.1.12"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -85,6 +85,11 @@ class Bridge:
         if self.sensor_mode not in ("useful", "full"):
             LOG.warning("sensor_mode=%s ungültig – nutze useful", self.sensor_mode)
             self.sensor_mode = "useful"
+        if self.sensor_mode == "full":
+            LOG.warning(
+                "sensor_mode=full → viele Entities. Für schlanke Sensoren in der App-Config "
+                "sensor_mode auf 'useful' stellen."
+            )
 
         self.mqtt = HaMqtt(
             host=str(env_or(opts, "mqtt_host", "core-mosquitto")),

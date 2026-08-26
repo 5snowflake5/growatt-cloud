@@ -4,6 +4,15 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.12] – 2026-08-26
+
+### Fixed
+- API Rate-Limit (code 102): Noah/Nexa und MIN werden **account-weit** gedrosselt (nicht pro Gerät), plus 65 s Backoff nach 102.
+- Warnung im Log, wenn `sensor_mode=full` aktiv ist.
+
+### Note
+- Für ~25–30 Sensoren in der App-Config **`sensor_mode: useful`** setzen (nicht `full`).
+
 ## [0.1.11] – 2026-08-26
 
 ### Fixed
