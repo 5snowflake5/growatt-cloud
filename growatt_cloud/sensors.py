@@ -382,6 +382,8 @@ _USEFUL_EXTRA_STORAGE = {
     "off_grid_current",
     "pv1_temp",
     "pv2_temp",
+    "pv3_temp",
+    "pv4_temp",
     "device_to_grid_power",
     "grid_to_device_power",
     "allow_grid_charging",
@@ -901,9 +903,9 @@ def filter_published_values(
             _prune_min_noise(out, aggressive=True)
 
     out.update(meta)
-    # Speicher: PV1/PV2 + Turm-Summen nach dem Filter erzwingen (Noah = 2 Strings)
+    # Speicher: PV1–4 sichtbar halten (ohne Tower-Semantik); Turm-Summen erzwingen
     if kind == "storage":
-        for i in range(1, 3):
+        for i in range(1, 5):
             for suffix, default in (
                 ("power", 0.0),
                 ("voltage", 0.0),
@@ -917,10 +919,6 @@ def filter_published_values(
             tkey = f"pv{i}_temp"
             if tkey in values and values[tkey] is not None:
                 out[tkey] = values[tkey]
-        # PV3/PV4 sind beim Noah keine echten Strings – nicht erzwingen / raus
-        for i in range(3, 5):
-            for suffix in ("power", "voltage", "current", "temp"):
-                out.pop(f"pv{i}_{suffix}", None)
         for key in ("solar_power_tower1", "solar_power_tower2"):
             if key in values:
                 out[key] = values[key]
@@ -984,6 +982,12 @@ _CURATED_KEEP_STORAGE = {
     "pv2_power",
     "pv2_voltage",
     "pv2_current",
+    "pv3_power",
+    "pv3_voltage",
+    "pv3_current",
+    "pv4_power",
+    "pv4_voltage",
+    "pv4_current",
     "solar_power_tower1",
     "solar_power_tower2",
     "generation_today_tower1",
