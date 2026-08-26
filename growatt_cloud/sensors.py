@@ -61,7 +61,22 @@ def _pick(data: dict[str, Any], *keys: str) -> Any:
     return None
 
 
-def detect_storage_label(raw: dict[str, Any]) -> str:
+def detect_storage_label(raw: dict[str, Any], serial: str | None = None) -> str:
+    """Noah vs Nexa: API-Typ ist bei beiden 'noah' – Unterscheidung über Model/Alias/SN.
+
+    Typische Serial-Präfixe: 0PVP… = Noah, 0HVR… = Nexa.
+    """
+    sn = str(
+        serial
+        or raw.get("deviceSn")
+        or raw.get("device_sn")
+        or raw.get("datalogSn")
+        or raw.get("datalog_sn")
+        or raw.get("dataloggerSn")
+        or raw.get("datalogger_sn")
+        or ""
+    ).strip().upper()
+
     blob = " ".join(
         str(x)
         for x in (
@@ -69,12 +84,35 @@ def detect_storage_label(raw: dict[str, Any]) -> str:
             raw.get("modelName"),
             raw.get("model_name"),
             raw.get("alias"),
-            raw.get("deviceType"),
-            raw.get("device_type"),
+            raw.get("manName"),
+            raw.get("man_name"),
         )
         if x
     ).lower()
-    return "Nexa" if "nexa" in blob else "Noah"
+
+    # Explizite Model-/Alias-Treffer zuerst (nicht "neo" – das ist der Balkon-WR)
+    if re.search(r"\bnexa\b", blob) or "nexa 2000" in blob or "nexa2000" in blob:
+        return "Nexa"
+    if re.search(r"\bnoah\b", blob) or "noah 2000" in blob or "noah2000" in blob:
+        return "Noah"
+
+    if sn.startswith("0HVR") or sn.startswith("HVR"):
+        return "Nexa"
+    if sn.startswith("0PVP") or sn.startswith("PVP"):
+        return "Noah"
+
+    # Fallback: API liefert type=noah für beide
+    return "Noah"
+
+
+def storage_device_name(raw: dict[str, Any], label: str, serial: str) -> str:
+    alias = _pick(raw, "alias", "Alias")
+    if alias and str(alias).strip() and str(alias).strip().upper() != serial.upper():
+        return str(alias).strip()
+    model = _pick(raw, "model", "Model")
+    if model and str(model).strip():
+        return str(model).strip()
+    return f"{label} {serial}"
 
 
 def flatten_raw(raw: dict[str, Any] | None) -> dict[str, Any]:
@@ -134,10 +172,16 @@ def _curated_storage(raw: dict[str, Any]) -> dict[str, Any]:
     work = _int(raw, "workMode", "work_mode")
     heating = _int(raw, "heatingStatus", "heating_status")
     lost = raw.get("lost") in (True, 1, "1", "true", "True")
+    sn = str(
+        _pick(raw, "deviceSn", "device_sn", "datalogSn", "datalog_sn", "dataloggerSn", "datalogger_sn") or ""
+    )
+    # Label nochmal mit SN absichern (falls Model fehlt)
+    label = detect_storage_label(raw, sn or None)
 
     out: dict[str, Any] = {
         "family": label.lower(),
         "label": label,
+        "device_name": storage_device_name(raw, label, sn or "storage"),
         "soc": _num(raw, "totalBatteryPackSoc", "total_battery_pack_soc", "soc"),
         "solar_power": _num(raw, "ppv"),
         "output_power": abs(_num(raw, "pac") or 0.0),
@@ -171,11 +215,12 @@ def _curated_storage(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
     for i in range(1, 5):
+        if i > packs:
+            continue
         soc = _num(raw, f"battery{i}Soc", f"battery{i}_soc", default=None)
         temp = _num(raw, f"battery{i}Temp", f"battery{i}_temp", default=None)
-        if i <= packs or soc is not None:
-            out[f"battery{i}_soc"] = soc if soc is not None else 0.0
-            out[f"battery{i}_temp"] = temp if temp is not None else 0.0
+        out[f"battery{i}_soc"] = soc if soc is not None else 0.0
+        out[f"battery{i}_temp"] = temp if temp is not None else 0.0
 
     for i in range(1, 5):
         v = _num(raw, f"pv{i}Voltage", f"pv{i}_voltage", default=None)
@@ -258,12 +303,23 @@ def merge_device_values(
     *,
     kind: str,
     wifi_dbm: float | None = None,
+    serial: str | None = None,
 ) -> dict[str, Any]:
     """info (Details) + energy (LastData) + freundliche Aliase + optional WLAN."""
     combined = {**(info or {}), **(energy or {})}
+    if serial:
+        combined.setdefault("deviceSn", serial)
     flat = {**flatten_raw(info), **flatten_raw(energy)}
     if kind == "storage":
         curated = _curated_storage(combined)
+        packs = int(curated.get("battery_num") or 1)
+        # Phantom-Packs und °F-Duplikate entfernen
+        for i in range(packs + 1, 5):
+            for suffix in ("soc", "temp", "temp_f", "serial_num", "protect_status", "warn_status"):
+                flat.pop(f"battery{i}_{suffix}", None)
+                curated.pop(f"battery{i}_{suffix}", None)
+        for i in range(1, packs + 1):
+            flat.pop(f"battery{i}_temp_f", None)
     else:
         curated = _curated_min(combined)
     out = {**flat, **curated}

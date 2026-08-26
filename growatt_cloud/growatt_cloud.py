@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.5"
+VERSION = "0.1.6"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -143,7 +143,7 @@ class Bridge:
             wifi = self.api.wifi_strength(sn, api_type, min_interval_s=INFO_INTERVAL_S)
         except GrowattApiError as exc:
             LOG.debug("WiFi %s: %s", sn, exc)
-        return merge_device_values(energy, info, kind=kind, wifi_dbm=wifi)
+        return merge_device_values(energy, info, kind=kind, wifi_dbm=wifi, serial=sn)
 
     def poll_storage(self) -> None:
         now = time.monotonic()
