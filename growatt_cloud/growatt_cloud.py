@@ -2,15 +2,14 @@
 """Growatt Cloud → MQTT für Home Assistant.
 
 Ein Login (API-Token), Open API v4:
-  - Noah und Nexa (deviceType=noah)
-  - MIN-Wechselrichter (Balkon-WR)
+  - Noah und Nexa (deviceType=noah, Auto-Erkennung)
+  - MIN-Wechselrichter (Auto aus Geräteliste)
 
-Ersetzt die Combo noah-mqtt + Growatt-Server-Integration (Doppel-Login / Sperre).
+Keine manuellen Serials nötig.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import signal
@@ -23,18 +22,15 @@ from api import (
     GrowattCloudApi,
     MIN_INTERVAL_NOAH_S,
     MIN_INTERVAL_OTHER_S,
-    normalize_min,
-    normalize_storage,
 )
 from mqtt_ha import HaMqtt
+from sensors import normalize_min, normalize_storage
 
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
-# Gerätetypen, die wir als Speicher (Noah/Nexa) behandeln
 STORAGE_TYPES = {"noah", "nexa"}
-# Balkon-/String-WR
 INVERTER_TYPES = {"min", "inv", "tlx"}
 
 
@@ -54,6 +50,8 @@ def load_options() -> dict[str, Any]:
     for path in OPTIONS_PATHS:
         if os.path.isfile(path):
             with open(path, encoding="utf-8") as fh:
+                import json
+
                 return json.load(fh)
     return {}
 
@@ -82,12 +80,6 @@ class Bridge:
             int(env_or(opts, "poll_inverter_seconds", MIN_INTERVAL_OTHER_S)),
         )
         self.poll_devices_s = max(300, int(env_or(opts, "poll_devices_seconds", 3600)))
-
-        sn_storage = str(env_or(opts, "storage_sn", "")).strip()
-        sn_inverter = str(env_or(opts, "inverter_sn", "")).strip()
-        self.force_storage_sn = sn_storage or None
-        self.force_inverter_sn = sn_inverter or None
-        self.storage_family = str(env_or(opts, "storage_family", "auto")).strip().lower() or "auto"
 
         self.mqtt = HaMqtt(
             host=str(env_or(opts, "mqtt_host", "core-mosquitto")),
@@ -119,17 +111,8 @@ class Bridge:
                 row.get("deviceSn") or row.get("device_sn"),
                 row.get("deviceType") or row.get("device_type"),
             )
-        # Discovery sofort, auch wenn der erste Energy-Poll noch scheitert
-        for sn, _api in self.storage_targets():
-            label = "Nexa" if self.storage_family == "nexa" else "Noah"
-            self.mqtt.ensure_storage_discovery(sn, label)
-        for sn, _api in self.inverter_targets():
-            self.mqtt.ensure_inverter_discovery(sn)
 
     def storage_targets(self) -> list[tuple[str, str]]:
-        """[(sn, api_type)] – api_type immer noah für Open API."""
-        if self.force_storage_sn:
-            return [(self.force_storage_sn, "noah")]
         out: list[tuple[str, str]] = []
         for row in self.devices:
             sn = str(row.get("deviceSn") or row.get("device_sn") or "").strip()
@@ -139,27 +122,14 @@ class Bridge:
         return out
 
     def inverter_targets(self) -> list[tuple[str, str]]:
-        if self.force_inverter_sn:
-            return [(self.force_inverter_sn, "min")]
         out: list[tuple[str, str]] = []
         for row in self.devices:
             sn = str(row.get("deviceSn") or row.get("device_sn") or "").strip()
             dtype = str(row.get("deviceType") or row.get("device_type") or "").strip().lower()
             if sn and dtype in INVERTER_TYPES:
-                # BZP… typisch MIN
-                api_type = "min" if dtype in ("min", "tlx") else dtype
-                if api_type == "inv":
-                    api_type = "min"
+                api_type = "min" if dtype in ("min", "tlx", "inv") else dtype
                 out.append((sn, api_type))
         return out
-
-    def ensure_discovery_for_targets(self) -> None:
-        """Discovery sofort bei bekannter SN – nicht erst nach erfolgreichem Energy-Poll."""
-        label = "Nexa" if self.storage_family == "nexa" else "Noah"
-        for sn, _api in self.storage_targets():
-            self.mqtt.ensure_storage_discovery(sn, label)
-        for sn, _api in self.inverter_targets():
-            self.mqtt.ensure_inverter_discovery(sn)
 
     def poll_storage(self) -> None:
         now = time.monotonic()
@@ -169,27 +139,23 @@ class Bridge:
                 continue
             try:
                 raw = self.api.query_last_data(sn, api_type)
-                if self.storage_family in ("noah", "nexa"):
-                    family = self.storage_family
-                else:
-                    blob = json.dumps(raw).lower()
-                    family = "nexa" if "nexa" in blob else "noah"
-                values = normalize_storage(raw, family=family)
-                self.mqtt.ensure_storage_discovery(sn, values["label"])
+                values = normalize_storage(raw)
+                self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
                 self._last_storage[sn] = time.monotonic()
                 LOG.info(
-                    "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh",
+                    "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh packs=%s entities≈%s",
                     values["label"],
                     sn,
-                    values["soc"],
-                    values["solar_power"],
-                    values["output_power"],
-                    values["generation_today"],
+                    values.get("soc"),
+                    values.get("solar_power") or 0,
+                    values.get("output_power") or 0,
+                    values.get("generation_today") or 0,
+                    values.get("battery_num"),
+                    len([k for k in values if k not in ("family", "label", "time")]),
                 )
             except GrowattApiError as exc:
                 LOG.error("Speicher %s: %s", sn, exc)
-                # bei Rate-Limit länger warten
                 if exc.code in (100, 102, 10012):
                     self._last_storage[sn] = time.monotonic()
 
@@ -202,16 +168,17 @@ class Bridge:
             try:
                 raw = self.api.query_last_data(sn, api_type)
                 values = normalize_min(raw)
-                self.mqtt.ensure_inverter_discovery(sn)
+                self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
                 self._last_inverter[sn] = time.monotonic()
                 LOG.info(
-                    "WR %s AC=%.0fW Today=%.2fkWh In1=%.2f In2=%.2f",
+                    "WR %s AC=%.0fW Today=%.2fkWh In1=%.2f In2=%.2f entities≈%s",
                     sn,
-                    values["ac_power"],
-                    values["energy_today"],
-                    values["energy_today_input_1"],
-                    values["energy_today_input_2"],
+                    values.get("ac_power") or 0,
+                    values.get("energy_today") or 0,
+                    values.get("energy_today_input_1") or 0,
+                    values.get("energy_today_input_2") or 0,
+                    len([k for k in values if k not in ("family", "label", "time")]),
                 )
             except GrowattApiError as exc:
                 LOG.error("WR %s: %s", sn, exc)
@@ -219,7 +186,7 @@ class Bridge:
                     self._last_inverter[sn] = time.monotonic()
 
     def run(self) -> None:
-        LOG.info("growatt_cloud %s start", VERSION)
+        LOG.info("growatt_cloud %s start (Geräte auto aus API)", VERSION)
         self.mqtt.connect()
         if not self.mqtt.wait_connected(5):
             LOG.warning("Starte Poll-Loop trotzdem – MQTT-Reconnect läuft im Hintergrund")
@@ -229,11 +196,8 @@ class Bridge:
                 targets_s = self.storage_targets()
                 targets_i = self.inverter_targets()
                 if not targets_s and not targets_i:
-                    LOG.warning(
-                        "Keine Noah/Nexa/MIN-Geräte – storage_sn/inverter_sn setzen oder Token/Plant prüfen"
-                    )
+                    LOG.warning("Keine Noah/Nexa/MIN-Geräte in der Geräteliste – Token/Plant prüfen")
                 else:
-                    self.ensure_discovery_for_targets()
                     LOG.debug("Ziele Speicher=%s WR=%s", targets_s, targets_i)
                 self.poll_storage()
                 self.poll_inverter()

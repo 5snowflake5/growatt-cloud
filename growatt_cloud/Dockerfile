@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     py3-paho-mqtt
 
 COPY api.py /app/api.py
+COPY sensors.py /app/sensors.py
 COPY mqtt_ha.py /app/mqtt_ha.py
 COPY growatt_cloud.py /app/growatt_cloud.py
 

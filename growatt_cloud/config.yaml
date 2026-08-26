@@ -1,5 +1,5 @@
 name: Growatt Cloud
-version: "0.1.3"
+version: "0.1.4"
 slug: growatt_cloud
 description: >-
   Noah/Nexa + MIN-Wechselrichter über Growatt Open API (ein Token, v4).
@@ -17,9 +17,6 @@ services:
 options:
   api_token: ""
   server_url: "https://openapi.growatt.com"
-  storage_sn: ""
-  storage_family: auto
-  inverter_sn: ""
   poll_storage_seconds: 60
   poll_inverter_seconds: 300
   poll_devices_seconds: 3600
@@ -33,9 +30,6 @@ options:
 schema:
   api_token: password
   server_url: str
-  storage_sn: str
-  storage_family: list(auto|noah|nexa)
-  inverter_sn: str
   poll_storage_seconds: int(60,3600)
   poll_inverter_seconds: int(300,7200)
   poll_devices_seconds: int(300,86400)
