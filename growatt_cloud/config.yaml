@@ -1,5 +1,5 @@
 name: Growatt Cloud
-version: "0.1.13"
+version: "0.1.14"
 slug: growatt_cloud
 description: >-
   Noah/Nexa + MIN-Wechselrichter über Growatt Open API (ein Token, v4).

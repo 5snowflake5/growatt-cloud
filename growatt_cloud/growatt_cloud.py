@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.13"
+VERSION = "0.1.14"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -105,7 +105,6 @@ class Bridge:
         self._last_devices = 0.0
         self._last_storage: dict[str, float] = {}
         self._last_inverter: dict[str, float] = {}
-        self._storage_rr = 0  # Round-Robin Index Noah/Nexa
 
     def request_stop(self, *_args) -> None:
         self.stop = True
@@ -160,45 +159,34 @@ class Bridge:
         )
 
     def poll_storage(self) -> None:
-        """Pro Loop höchstens EIN Noah/Nexa – Fair-Share des 1/Min-Energy-Slots."""
-        targets = self.storage_targets()
-        if not targets:
-            return
+        """Alle fälligen Noah/Nexa pollen (Limit ist pro SN, nicht global)."""
         now = time.monotonic()
-        n = len(targets)
-        pick: tuple[str, str] | None = None
-        for i in range(n):
-            idx = (self._storage_rr + i) % n
-            sn, api_type = targets[idx]
-            if now - self._last_storage.get(sn, 0.0) >= self.poll_storage_s:
-                pick = (sn, api_type)
-                self._storage_rr = (idx + 1) % n
-                break
-        if pick is None:
-            return
-        sn, api_type = pick
-        try:
-            raw = self.api.query_last_data(sn, api_type)
-            values = self._enrich(sn, api_type, raw, "storage")
-            self.mqtt.ensure_discovery(sn, values["label"], values)
-            self.mqtt.publish_states(sn, values)
-            self._last_storage[sn] = time.monotonic()
-            entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
-            LOG.info(
-                "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh packs=%s mode=%s entities=%s",
-                values["label"],
-                sn,
-                values.get("soc"),
-                values.get("solar_power") or 0,
-                values.get("output_power") or 0,
-                values.get("generation_today") or 0,
-                values.get("battery_num"),
-                self.sensor_mode,
-                entity_n,
-            )
-        except GrowattApiError as exc:
-            LOG.error("Speicher %s: %s", sn, exc)
-            self._last_storage[sn] = time.monotonic()
+        for sn, api_type in self.storage_targets():
+            if now - self._last_storage.get(sn, 0.0) < self.poll_storage_s:
+                continue
+            try:
+                raw = self.api.query_last_data(sn, api_type)
+                values = self._enrich(sn, api_type, raw, "storage")
+                self.mqtt.ensure_discovery(sn, values["label"], values)
+                self.mqtt.publish_states(sn, values)
+                self._last_storage[sn] = time.monotonic()
+                entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
+                LOG.info(
+                    "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh packs=%s mode=%s entities=%s",
+                    values["label"],
+                    sn,
+                    values.get("soc"),
+                    values.get("solar_power") or 0,
+                    values.get("output_power") or 0,
+                    values.get("generation_today") or 0,
+                    values.get("battery_num"),
+                    self.sensor_mode,
+                    entity_n,
+                )
+            except GrowattApiError as exc:
+                LOG.error("Speicher %s: %s", sn, exc)
+                if exc.code in (100, 102, 10012):
+                    self._last_storage[sn] = time.monotonic()
 
     def poll_inverter(self) -> None:
         now = time.monotonic()
