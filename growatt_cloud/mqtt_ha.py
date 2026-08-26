@@ -128,6 +128,48 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
 
 _META_SKIP = {"family", "label", "time", "device_name"}
 
+# Quellen-Keys (Hauptgerät) → object_id auf virtuellem Tower-Gerät
+# Turm 2 hat kein eigenes WLAN – Daten kommen vom Master-Noah (PV3/PV4 + Battery 2).
+_TOWER_SENSOR_MAP: dict[int, dict[str, str]] = {
+    2: {
+        "soc": "battery2_soc",
+        "battery_temp": "battery2_temp",
+        "solar_power": "solar_power_tower2",
+        "generation_today": "generation_today_tower2",
+        "pv1_power": "pv3_power",
+        "pv1_voltage": "pv3_voltage",
+        "pv1_current": "pv3_current",
+        "pv2_power": "pv4_power",
+        "pv2_voltage": "pv4_voltage",
+        "pv2_current": "pv4_current",
+        "connectivity": "connectivity",
+    },
+    3: {
+        "soc": "battery3_soc",
+        "battery_temp": "battery3_temp",
+        "connectivity": "connectivity",
+    },
+    4: {
+        "soc": "battery4_soc",
+        "battery_temp": "battery4_temp",
+        "connectivity": "connectivity",
+    },
+}
+
+_TOWER_SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
+    "soc": ("SoC", "%", "battery", "measurement", "sensor"),
+    "battery_temp": ("Battery Temperature", "°C", "temperature", "measurement", "sensor"),
+    "solar_power": ("Solar Power", "W", "power", "measurement", "sensor"),
+    "generation_today": ("Generation Today", "kWh", "energy", "total_increasing", "sensor"),
+    "pv1_power": ("PV1 Power", "W", "power", "measurement", "sensor"),
+    "pv1_voltage": ("PV1 Voltage", "V", "voltage", "measurement", "sensor"),
+    "pv1_current": ("PV1 Current", "A", "current", "measurement", "sensor"),
+    "pv2_power": ("PV2 Power", "W", "power", "measurement", "sensor"),
+    "pv2_voltage": ("PV2 Voltage", "V", "voltage", "measurement", "sensor"),
+    "pv2_current": ("PV2 Current", "A", "current", "measurement", "sensor"),
+    "connectivity": ("Connectivity", None, "connectivity", None, "binary_sensor"),
+}
+
 
 def slug(value: str) -> str:
     text = re.sub(r"[^a-zA-Z0-9_]+", "_", (value or "").strip().lower())
@@ -338,14 +380,26 @@ class HaMqtt:
         if getattr(info, "rc", 0) != 0:
             LOG.warning("MQTT publish rc=%s topic=%s", info.rc, topic)
 
-    def _device(self, serial: str, name: str, model: str) -> dict[str, Any]:
-        return {
-            "identifiers": [f"growatt_cloud_{slug(serial)}"],
+    def _device(
+        self,
+        serial: str,
+        name: str,
+        model: str,
+        *,
+        suffix: str = "",
+        via_device: str | None = None,
+    ) -> dict[str, Any]:
+        ident = f"growatt_cloud_{slug(serial)}{suffix}"
+        out: dict[str, Any] = {
+            "identifiers": [ident],
             "name": name,
             "manufacturer": "Growatt",
             "model": model,
-            "serial_number": serial,
+            "serial_number": f"{serial}{suffix.replace('_', '-')}" if suffix else serial,
         }
+        if via_device:
+            out["via_device"] = via_device
+        return out
 
     def _clear_discovery(self, node: str, object_id: str) -> None:
         for component in ("sensor", "binary_sensor"):
@@ -393,6 +447,7 @@ class HaMqtt:
         if not need_publish:
             self._discovery_keys[serial] = new_keys
             self._save_discovery_keys()
+            self._ensure_tower_devices(serial, label_clean, device_name, values)
             return
 
         device = self._device(serial, device_name, model)
@@ -451,7 +506,117 @@ class HaMqtt:
             self.sensor_mode,
             count,
         )
+        self._ensure_tower_devices(serial, label_clean, device_name, values)
         time.sleep(0.25)
+
+    def _tower_node(self, serial: str, tower: int) -> str:
+        return f"{slug(serial)}_t{tower}"
+
+    def _ensure_tower_devices(
+        self,
+        serial: str,
+        label: str,
+        parent_name: str,
+        values: dict[str, Any],
+    ) -> None:
+        """Virtuelle HA-Geräte für Stack-Türme ohne eigenes WLAN."""
+        packs = int(values.get("battery_num") or 1)
+        packs = max(1, min(packs, 4))
+        parent_id = f"growatt_cloud_{slug(serial)}"
+
+        for tower in range(2, 5):
+            node = self._tower_node(serial, tower)
+            key = f"{serial}#t{tower}"
+            if tower > packs or tower not in _TOWER_SENSOR_MAP:
+                # Aufräumen falls früher vorhanden
+                old = self._discovery_keys.get(key) or set()
+                if old or node in self._subscribed_nodes:
+                    for oid in sorted(old | set(_TOWER_SENSOR_MAP.get(tower, {}))):
+                        self._clear_discovery(node, oid)
+                    self._discovery_keys.pop(key, None)
+                    self._discovery_sig.pop(key, None)
+                    self._wanted_by_node.pop(node, None)
+                continue
+
+            mapping = _TOWER_SENSOR_MAP[tower]
+            tower_values = {
+                oid: values[src] for oid, src in mapping.items() if src in values and values[src] is not None
+            }
+            if "soc" not in tower_values and f"battery{tower}_soc" in values:
+                tower_values["soc"] = values[f"battery{tower}_soc"]
+            if not tower_values:
+                continue
+
+            keys = sorted(tower_values)
+            device_name = f"{label} Tower {tower}"
+            model = f"Growatt {label} Tower {tower}"
+            sig = f"v1|tower|{device_name}|{'|'.join(keys)}"
+            new_keys = set(keys)
+            self._wanted_by_node[node] = new_keys
+            self._subscribe_purge(node)
+
+            old_keys = self._discovery_keys.get(key) or set()
+            stale = old_keys - new_keys
+            need_publish = self._discovery_sig.get(key) != sig
+
+            if stale:
+                for gone in sorted(stale):
+                    self._clear_discovery(node, gone)
+
+            if not need_publish:
+                self._discovery_keys[key] = new_keys
+                continue
+
+            device = self._device(
+                serial,
+                device_name,
+                model,
+                suffix=f"_t{tower}",
+                via_device=parent_id,
+            )
+            count = 0
+            for object_id in keys:
+                name, unit, device_class, state_class, component = _TOWER_SENSOR_META.get(
+                    object_id, infer_meta(object_id)
+                )
+                unique = f"growatt_cloud_{node}_{object_id}"
+                topic = f"{self.discovery_prefix}/{component}/{node}/{object_id}/config"
+                state_topic = f"{self.state_prefix}/{node}/{object_id}"
+                payload: dict[str, Any] = {
+                    "name": name,
+                    "unique_id": unique,
+                    "object_id": f"{node}_{object_id}",
+                    "state_topic": state_topic,
+                    "device": device,
+                    "availability_topic": f"{self.state_prefix}/status",
+                    "payload_available": "online",
+                    "payload_not_available": "offline",
+                }
+                if component == "binary_sensor":
+                    payload["payload_on"] = "ON"
+                    payload["payload_off"] = "OFF"
+                if unit:
+                    payload["unit_of_measurement"] = unit
+                if device_class:
+                    payload["device_class"] = device_class
+                if state_class:
+                    payload["state_class"] = state_class
+                if device_class == "energy":
+                    payload["state_class"] = "total_increasing"
+                self._pub(topic, json.dumps(payload), retain=True)
+                count += 1
+
+            self._discovery_sig[key] = sig
+            self._discovery_keys[key] = new_keys
+            LOG.info(
+                "HA-Discovery Tower %s (%s) via %s → %s Entities",
+                tower,
+                device_name,
+                parent_name,
+                count,
+            )
+
+        self._save_discovery_keys()
 
     def publish_states(self, serial: str, values: dict[str, Any]) -> None:
         node = slug(serial)
@@ -461,4 +626,16 @@ class HaMqtt:
             if value is None:
                 continue
             self._pub(f"{self.state_prefix}/{node}/{key}", str(value), retain=True)
+
+        packs = int(values.get("battery_num") or 1)
+        for tower in range(2, min(packs, 4) + 1):
+            mapping = _TOWER_SENSOR_MAP.get(tower)
+            if not mapping:
+                continue
+            tnode = self._tower_node(serial, tower)
+            for object_id, src in mapping.items():
+                if src not in values or values[src] is None:
+                    continue
+                self._pub(f"{self.state_prefix}/{tnode}/{object_id}", str(values[src]), retain=True)
+
         self._pub(f"{self.state_prefix}/status", "online", retain=True)
