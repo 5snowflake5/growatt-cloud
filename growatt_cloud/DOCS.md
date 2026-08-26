@@ -57,13 +57,14 @@ Kein manuelles Eintragen nötig.
 
 ## Sensoren
 
-Nach dem ersten erfolgreichen Poll erscheinen u. a.:
+Es wird **alles** veröffentlicht, was die Open API für dein Gerät liefert:
 
-**Speicher (Noah/Nexa):** SoC, Solar/Charge/Discharge/Output, Generation Today/Total/Month/Year,
-Battery-Packs (SoC+Temp), PV1–4, Limits, Heating, Connectivity, Work Mode, …  
+1. `queryLastData` – Live-Messwerte (Noah ~70+, MIN oft 100+ Felder)
+2. `queryDeviceInfo` – alle 5 Min: Firmware, Limits, Zeitfenster, Alias, …
+3. `getWiFiSignalByDevice` – WLAN-Signal (dBm)
 
-**MIN-WR:** AC Power, Energy Today/Total, Input 1–4, PV, Spannung/Strom/Frequenz,
-Export/Import/Local Load, Temperaturen, …
+Zusätzlich bleiben freundliche Aliase (`soc`, `solar_power`, `ac_power`, …).
+Unbekannte Felder bekommen automatisch Name/Einheit aus dem Feldnamen.
 
-Die genaue Anzahl hängt davon ab, was die API für dein Gerät liefert
-(z. B. 1 vs. 2 Batterie-Packs).
+Die genaue Anzahl hängt vom Gerät und davon ab, welche Keys Growatt befüllt
+(leere Felder werden nicht als Entity angelegt).

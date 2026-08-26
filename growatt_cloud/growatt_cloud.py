@@ -24,14 +24,15 @@ from api import (
     MIN_INTERVAL_OTHER_S,
 )
 from mqtt_ha import HaMqtt
-from sensors import normalize_min, normalize_storage
+from sensors import merge_device_values
 
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
 STORAGE_TYPES = {"noah", "nexa"}
 INVERTER_TYPES = {"min", "inv", "tlx"}
+INFO_INTERVAL_S = 300  # queryDeviceInfo / WiFi – offizielles Details-Limit
 
 
 def setup_logging(level_name: str = "info") -> None:
@@ -131,6 +132,19 @@ class Bridge:
                 out.append((sn, api_type))
         return out
 
+    def _enrich(self, sn: str, api_type: str, energy: dict[str, Any], kind: str) -> dict[str, Any]:
+        info: dict[str, Any] = {}
+        wifi: float | None = None
+        try:
+            info = self.api.query_device_info(sn, api_type, min_interval_s=INFO_INTERVAL_S) or {}
+        except GrowattApiError as exc:
+            LOG.warning("DeviceInfo %s: %s", sn, exc)
+        try:
+            wifi = self.api.wifi_strength(sn, api_type, min_interval_s=INFO_INTERVAL_S)
+        except GrowattApiError as exc:
+            LOG.debug("WiFi %s: %s", sn, exc)
+        return merge_device_values(energy, info, kind=kind, wifi_dbm=wifi)
+
     def poll_storage(self) -> None:
         now = time.monotonic()
         for sn, api_type in self.storage_targets():
@@ -139,12 +153,13 @@ class Bridge:
                 continue
             try:
                 raw = self.api.query_last_data(sn, api_type)
-                values = normalize_storage(raw)
+                values = self._enrich(sn, api_type, raw, "storage")
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
                 self._last_storage[sn] = time.monotonic()
+                entity_n = len([k for k in values if k not in ("family", "label", "time")])
                 LOG.info(
-                    "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh packs=%s entities≈%s",
+                    "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh packs=%s entities=%s",
                     values["label"],
                     sn,
                     values.get("soc"),
@@ -152,7 +167,7 @@ class Bridge:
                     values.get("output_power") or 0,
                     values.get("generation_today") or 0,
                     values.get("battery_num"),
-                    len([k for k in values if k not in ("family", "label", "time")]),
+                    entity_n,
                 )
             except GrowattApiError as exc:
                 LOG.error("Speicher %s: %s", sn, exc)
@@ -167,18 +182,19 @@ class Bridge:
                 continue
             try:
                 raw = self.api.query_last_data(sn, api_type)
-                values = normalize_min(raw)
+                values = self._enrich(sn, api_type, raw, "min")
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
                 self._last_inverter[sn] = time.monotonic()
+                entity_n = len([k for k in values if k not in ("family", "label", "time")])
                 LOG.info(
-                    "WR %s AC=%.0fW Today=%.2fkWh In1=%.2f In2=%.2f entities≈%s",
+                    "WR %s AC=%.0fW Today=%.2fkWh In1=%.2f In2=%.2f entities=%s",
                     sn,
                     values.get("ac_power") or 0,
                     values.get("energy_today") or 0,
                     values.get("energy_today_input_1") or 0,
                     values.get("energy_today_input_2") or 0,
-                    len([k for k in values if k not in ("family", "label", "time")]),
+                    entity_n,
                 )
             except GrowattApiError as exc:
                 LOG.error("WR %s: %s", sn, exc)
