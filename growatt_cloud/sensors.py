@@ -322,29 +322,13 @@ _USEFUL_EXTRA_STORAGE = {
 _USEFUL_EXTRA_MIN = {
     "wifi_signal",
     "fw_version",
-    "model",
-    "alias",
+    "inner_version",
+    "model_text",
+    "pmax",
     "status_text",
-    "warn_text",
-    "error_text",
-    "ipv3",
-    "ipv4",
-    "vpv3",
-    "vpv4",
-    "ppv3",
-    "ppv4",
-    "vac2",
-    "vac3",
-    "iac2",
-    "iac3",
-    "pac2",
-    "pac3",
-    "temp3",
-    "temp4",
-    "temp5",
 }
 
-# Roh-Duplikate der freundlichen Aliase (nur im full-Modus relevant zum Aufräumen)
+# Roh-Duplikate der freundlichen Aliase
 _RAW_DUPES = {
     "total_battery_pack_soc",
     "total_battery_pack_charging_power",
@@ -360,11 +344,12 @@ _RAW_DUPES = {
     "charging_soc_high_limit",
     "charging_soc_low_limit",
     "heating_status",
-    "work_mode",  # curated überschreibt als Text; raw int bleibt sonst doppelt – siehe filter
-    "ppv",  # solar_power
-    "pac",  # output_power / ac_power
-    "status",  # status_code curated
-    "lost",  # connectivity
+    "ppv",
+    "pac",
+    "pac1",
+    "pacr",
+    "status",
+    "lost",
     "time_str",
     "last_update_time",
     "last_update_time_text",
@@ -372,14 +357,45 @@ _RAW_DUPES = {
     "sys_time_text",
     "datalog_sn",
     "datalogger_sn",
+    "data_log_sn",
+    "epv1_today",
+    "epv2_today",
+    "epv3_today",
+    "epv4_today",
+    "epv1_total",
+    "epv2_total",
+    "epv3_total",
+    "epv4_total",
+    "epv_total",
+    "e_to_grid_today",
+    "e_to_grid_total",
+    "e_to_user_today",
+    "e_to_user_total",
+    "e_local_load_today",
+    "e_local_load_total",
+    "elocal_load_today",
+    "elocal_load_total",
+    "eto_grid_today",
+    "eto_grid_total",
+    "eto_user_today",
+    "eto_user_total",
+    "pac_to_grid_total",
+    "pac_to_user_total",
+    "pac_to_local_load",
+    "temp1",
+    "temp2",
+    "temp3",
+    "temp4",
+    "temp5",
+    "status_text",
 }
 
 _ALWAYS_DROP_SUFFIXES = ("_temp_f",)
-_ALWAYS_DROP_PREFIXES = ()
 _ALWAYS_DROP_KEYS = {
     "is_again",
     "again",
     "address",
+    "addr",
     "timezone",
     "temp_type",
     "settable_time_period",
@@ -390,19 +406,184 @@ _ALWAYS_DROP_KEYS = {
     "ota_device_type_code_low",
     "port_name",
     "man_name",
+    "manufacturer",
     "associated_inv_man_and_model",
     "associated_inv_sn",
     "calendar",
     "day",
     "with_time",
     "time_total",
+    "total_working_time",
+    "group_id",
+    "id",
+    "level",
+    "img_path",
+    "parent_id",
+    "tree_id",
+    "tcp_server_ip",
+    "debug1",
+    "debug2",
+    "updating",
+    "com_address",
+    "device_type",
+    "dtc",
+    "modbus_version",
+    "hw_version",
+    "version_flag",
+    "priority_choose",
+    "traker_model",
+    "wselect_baudrate",
+    "str_num",
+    "pv_num",
+    "battery_no",
+    "battery_type",
+    "bat_cluster_num",
+    "bat_parallel_num",
+    "bat_series_num",
+    "b_merter_connect_flag",
+    "baging_test_step",
+    "bct_adjust",
+    "bct_mode",
+    "bcu_version",
+    "bdc_authversion",
+    "bdc_link_num",
+    "bdc1_model",
+    "bdc1_version",
+    "country_selected",
+    "safety_version",
+    "vpp_open",
+    "vpp_version",
+    "mppt",
+    "vnormal",
+    "inv_delay_time",
+    "restart_time",
+    "start_time",
+    "real_op_percent",
+    "load_percent",
+    "op_fullwatt",
+    "operating_mode",
+    "uw_sys_work_mode",
+    "bsystem_work_mode",
+    "derating_mode",
+    "dry_contact_status",
+    "gfci",
+    "iso",
+    "pex1",
+    "pex2",
+    "eex1_today",
+    "eex1_total",
+    "eex2_today",
+    "eex2_total",
+    "power",
+    "power_of_grid_feed",
+    "power_of_grid_take",
+    "power_of_load",
+    "power_of_photovoltaic",
+    "p_charge",
+    "p_discharge",
+    "charge_power_of_battery",
+    "dis_charge_power_of_battery",
+    "pself",
+    "psystem",
+    "e_today",
+    "e_total",
+    "energy_month",
+    "energy_month_text",
+    "warn_text",
+    "error_text",
+    "iacr",
+    "vacr",
+    "vacrs",
+    "vac_rs",
+    "vac_st",
+    "vac_tr",
+    "n_bus_voltage",
+    "p_bus_voltage",
+    "dc_voltage",
+    "dci_r",
+    "dci_s",
+    "dci_t",
+    "fault_type",
+    "fault_type1",
+    "new_warn_code",
+    "new_warn_sub_code",
+    "warn_code",
+    "warn_code1",
+    "mtnc_mode",
+    "mtnc_rqst",
 }
+
+# Prefixes: bei Balkon-WR ohne echte Batterie komplett weg; sonst nur Nullwerte
+_MIN_BATTERY_PREFIXES = (
+    "bdc",
+    "bms_",
+    "bat_",
+    "eps_",
+    "win_",
+    "soc1",
+    "soc2",
+    "vbat_",
+    "sys_fault_word",
+)
+
+_MIN_ALIAS_MAP = {
+    "pac": "ac_power",
+    "pac1": "ac_power_r",
+    "pacr": "ac_power_r",
+    "pac2": "ac_power_s",
+    "pac3": "ac_power_t",
+    "eac_today": "energy_today",
+    "eac_total": "energy_total",
+    "epv1_today": "energy_today_input_1",
+    "epv2_today": "energy_today_input_2",
+    "epv3_today": "energy_today_input_3",
+    "epv4_today": "energy_today_input_4",
+    "epv1_total": "energy_total_input_1",
+    "epv2_total": "energy_total_input_2",
+    "epv3_total": "energy_total_input_3",
+    "epv4_total": "energy_total_input_4",
+    "epv_total": "energy_total_pv",
+    "pac_to_grid_total": "export_power",
+    "pac_to_user_total": "import_power",
+    "pac_to_local_load": "local_load_power",
+    "e_to_grid_today": "energy_to_grid_today",
+    "eto_grid_today": "energy_to_grid_today",
+    "e_to_grid_total": "energy_to_grid_total",
+    "eto_grid_total": "energy_to_grid_total",
+    "e_to_user_today": "energy_to_user_today",
+    "eto_user_today": "energy_to_user_today",
+    "e_to_user_total": "energy_to_user_total",
+    "eto_user_total": "energy_to_user_total",
+    "e_local_load_today": "energy_local_load_today",
+    "elocal_load_today": "energy_local_load_today",
+    "e_local_load_total": "energy_local_load_total",
+    "elocal_load_total": "energy_local_load_total",
+    "temp1": "temperature",
+    "temp2": "temperature_2",
+    "temp3": "temperature_3",
+    "temp4": "temperature_4",
+    "temp5": "temperature_5",
+    "status_text": "status",
+    "lost": "connectivity",
+    "time_str": "last_update",
+    "last_update_time_text": "last_update",
+    "last_update_time": "last_update",
+}
+
+
+def _near_zero(value: Any, eps: float = 0.05) -> bool:
+    try:
+        return abs(float(value)) <= eps
+    except (TypeError, ValueError):
+        return False
 
 
 def _is_empty(value: Any) -> bool:
     if value is None:
         return True
     if isinstance(value, str) and not value.strip():
+        return True
+    if isinstance(value, str) and value.strip().lower() in ("unknown", "unbekannt", "none", "null", "-"):
         return True
     return False
 
@@ -412,7 +593,6 @@ def _is_epoch_ms(value: Any) -> bool:
         n = float(value)
     except (TypeError, ValueError):
         return False
-    # ~2001–2100 in ms
     return 1_000_000_000_000 <= n <= 4_000_000_000_000
 
 
@@ -453,6 +633,116 @@ def _prune_inactive_pv(out: dict[str, Any]) -> None:
             out.pop(key, None)
 
 
+def _has_min_battery(out: dict[str, Any]) -> bool:
+    for key in ("bms_soc", "bdc1_soc", "bdc1_vbat", "soc1", "bms_vbat"):
+        try:
+            if abs(float(out.get(key) or 0)) > 0.5:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+def _prune_min_phases(out: dict[str, Any]) -> None:
+    """Einphasig: S/T und unnötige Phasen-Leistungen weg."""
+    multiphase = False
+    for key in ("vac2", "vac3", "iac2", "iac3", "ac_power_s", "ac_power_t", "pac2", "pac3"):
+        if key in out and not _near_zero(out[key]):
+            multiphase = True
+            break
+    if multiphase:
+        return
+    for key in (
+        "vac2",
+        "vac3",
+        "iac2",
+        "iac3",
+        "ac_power_r",
+        "ac_power_s",
+        "ac_power_t",
+        "pac1",
+        "pac2",
+        "pac3",
+        "pacr",
+        "vac_st",
+        "vac_tr",
+    ):
+        out.pop(key, None)
+
+
+def _prune_zero_temps(out: dict[str, Any]) -> None:
+    for key in ("temperature_2", "temperature_3", "temperature_4", "temperature_5", "temp2", "temp3", "temp4", "temp5"):
+        if key in out and _near_zero(out[key]):
+            out.pop(key, None)
+
+
+def _prune_min_noise(out: dict[str, Any], *, aggressive: bool) -> None:
+    """Balkon-WR: Batterie/EPS/BMS-Nullfelder und Admin-Müll entfernen."""
+    keep_battery = _has_min_battery(out)
+    for key in list(out.keys()):
+        if key.startswith(_MIN_BATTERY_PREFIXES) or key in ("soc1", "soc2"):
+            if not keep_battery or (aggressive and _near_zero(out[key])):
+                out.pop(key, None)
+                continue
+        if key in _ALWAYS_DROP_KEYS:
+            out.pop(key, None)
+            continue
+        # kryptische model-Zahl
+        if key == "model" and isinstance(out[key], (int, float)) and float(out[key]) > 1e6:
+            out.pop(key, None)
+            continue
+        if aggressive and key.startswith(("eac_charge", "echarge", "edischarge", "eself", "esystem")):
+            if _near_zero(out[key]):
+                out.pop(key, None)
+        if aggressive and key in (
+            "export_power",
+            "import_power",
+            "local_load_power",
+            "energy_to_grid_today",
+            "energy_to_grid_total",
+            "energy_to_user_today",
+            "energy_to_user_total",
+            "energy_local_load_today",
+            "energy_local_load_total",
+        ):
+            if _near_zero(out[key]):
+                out.pop(key, None)
+
+
+def _drop_alias_dupes(out: dict[str, Any], kind: str) -> None:
+    alias_map = dict(_MIN_ALIAS_MAP) if kind == "min" else {}
+    if kind == "storage":
+        alias_map.update(
+            {
+                "total_battery_pack_soc": "soc",
+                "total_battery_pack_charging_power": "charging_power",
+                "total_battery_pack_charging_status": "charge_status",
+                "eac_today": "generation_today",
+                "eac_total": "generation_total",
+                "eac_month": "generation_month",
+                "eac_year": "generation_year",
+                "ct_self_power": "ct_power",
+                "total_household_load": "household_load",
+                "ppv": "solar_power",
+                "pac": "output_power",
+                "lost": "connectivity",
+                "heating_status": "heating",
+                "time_str": "last_update",
+                "last_update_time_text": "last_update",
+                "last_update_time": "last_update",
+            }
+        )
+    for raw_key, alias in alias_map.items():
+        if raw_key in out and alias in out and raw_key != alias:
+            out.pop(raw_key, None)
+    # status vs status_code: Text behalten, Code behalten – raw status int weg wenn status Text
+    if "status" in out and "status_code" in out:
+        if isinstance(out["status"], str):
+            pass
+        elif out["status"] == out["status_code"]:
+            out.pop("status", None)
+
+
 def filter_published_values(
     values: dict[str, Any],
     *,
@@ -467,7 +757,6 @@ def filter_published_values(
     out = dict(values)
     meta = {k: out.pop(k) for k in ("family", "label", "device_name") if k in out}
 
-    # immer: leer, Epoch-ms, °F, bekannte Müll-Keys, Zeitfenster-Start/Ende/Enable
     for key in list(out.keys()):
         val = out[key]
         if _is_empty(val):
@@ -476,7 +765,7 @@ def filter_published_values(
         if key in _ALWAYS_DROP_KEYS or any(key.endswith(s) for s in _ALWAYS_DROP_SUFFIXES):
             out.pop(key, None)
             continue
-        if _is_epoch_ms(val) and ("time" in key or key.startswith("sys_")):
+        if _is_epoch_ms(val) and ("time" in key or key.startswith("sys_") or key == "calendar"):
             out.pop(key, None)
             continue
         if re.match(r"^time[1-9]_(start|end|enable)$", key):
@@ -487,6 +776,11 @@ def filter_published_values(
             continue
 
     _prune_inactive_pv(out)
+    if kind == "min":
+        _prune_min_phases(out)
+        _prune_zero_temps(out)
+        _prune_min_noise(out, aggressive=True)
+    _drop_alias_dupes(out, kind)
 
     if mode == "useful":
         extras = _USEFUL_EXTRA_STORAGE if kind == "storage" else _USEFUL_EXTRA_MIN
@@ -505,53 +799,23 @@ def filter_published_values(
                 "ac_couple_warn_status",
                 "mppt_protect_status",
                 "pd_warn_status",
+                "fault_status",
             ):
                 try:
                     if float(out[key]) == 0:
                         out.pop(key, None)
                 except (TypeError, ValueError):
                     out.pop(key, None)
+        if kind == "min":
+            _prune_min_phases(out)
+            _prune_zero_temps(out)
+            # optionale Null-Energien im useful-Modus weg
+            for key in list(out.keys()):
+                if key.startswith(("energy_to_", "energy_local_", "export_", "import_", "local_load_")):
+                    if _near_zero(out[key]):
+                        out.pop(key, None)
     else:
-        # full: Duplikate zu Aliasen entfernen, Zeitfenster behalten (ohne leere start/end)
-        for key in list(_RAW_DUPES):
-            # curated Alias existiert? dann raw weg
-            alias_map = {
-                "total_battery_pack_soc": "soc",
-                "total_battery_pack_charging_power": "charging_power",
-                "total_battery_pack_charging_status": "charge_status",
-                "eac_today": "generation_today",
-                "eac_total": "generation_total",
-                "eac_month": "generation_month",
-                "eac_year": "generation_year",
-                "ct_self_power": "ct_power",
-                "total_household_load": "household_load",
-                "household_load_apart_from_groplug": "household_load",
-                "battery_package_quantity": "battery_num",
-                "charging_soc_high_limit": "charge_soc_limit",
-                "charging_soc_low_limit": "discharge_soc_limit",
-                "heating_status": "heating",
-                "ppv": "solar_power",
-                "pac": "output_power" if kind == "storage" else "ac_power",
-                "lost": "connectivity",
-                "time_str": "last_update",
-                "last_update_time_text": "last_update",
-                "last_update_time": "last_update",
-                "sys_time": "last_update",
-                "sys_time_text": "last_update",
-            }
-            alias = alias_map.get(key)
-            if alias and alias in out:
-                out.pop(key, None)
-            elif key in (
-                "datalog_sn",
-                "datalogger_sn",
-                "status",
-            ) and ("status_code" in out or "status" in out and key == "status"):
-                if key == "status" and "status_code" in out and out.get("status") == out.get("status_code"):
-                    out.pop("status", None)
-
-        # work_mode: wenn Text-Alias da und raw int gleich key – curated heißt auch work_mode
-        # protect/warn =0 droppen
+        # full: weiterhin stark bereinigt (kein Balkon-Wahnsinn), aber Extra-Felder erlaubt
         for key in list(out.keys()):
             if key.endswith(("_protect_status", "_warn_status")) or key in (
                 "ac_couple_protect_status",
@@ -565,6 +829,8 @@ def filter_published_values(
                         out.pop(key, None)
                 except (TypeError, ValueError):
                     pass
+        if kind == "min":
+            _prune_min_noise(out, aggressive=True)
 
     out.update(meta)
     return out
@@ -619,6 +885,7 @@ _CURATED_KEEP_STORAGE = {
     "pv4_current",
 }
 
+# Schlanker MIN-Kern (~Growatt-Server „sinnvoll“)
 _CURATED_KEEP_MIN = {
     "ac_power",
     "ac_power_r",
@@ -657,9 +924,6 @@ _CURATED_KEEP_MIN = {
     "fac",
     "temperature",
     "temperature_2",
-    "temperature_3",
-    "temperature_4",
-    "temperature_5",
     "pf",
     "export_power",
     "import_power",
@@ -676,7 +940,6 @@ _CURATED_KEEP_MIN = {
     "last_update",
 }
 
-# Platzhalter – filter nutzt _CURATED_KEEP_*
 SENSOR_META_HINTS = _CURATED_KEEP_STORAGE | _CURATED_KEEP_MIN
 
 

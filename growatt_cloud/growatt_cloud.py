@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
