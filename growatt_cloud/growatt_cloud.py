@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import merge_device_values
 
-VERSION = "0.1.10"
+VERSION = "0.1.11"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 LOG = logging.getLogger("growatt-cloud")
 
@@ -164,9 +164,9 @@ class Bridge:
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
                 self._last_storage[sn] = time.monotonic()
-                entity_n = len([k for k in values if k not in ("family", "label", "time")])
+                entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
-                    "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh packs=%s entities=%s",
+                    "%s %s SoC=%s%% PV=%.0fW Out=%.0fW Today=%.2fkWh packs=%s mode=%s entities=%s",
                     values["label"],
                     sn,
                     values.get("soc"),
@@ -174,6 +174,7 @@ class Bridge:
                     values.get("output_power") or 0,
                     values.get("generation_today") or 0,
                     values.get("battery_num"),
+                    self.sensor_mode,
                     entity_n,
                 )
             except GrowattApiError as exc:
@@ -193,14 +194,15 @@ class Bridge:
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
                 self._last_inverter[sn] = time.monotonic()
-                entity_n = len([k for k in values if k not in ("family", "label", "time")])
+                entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
-                    "WR %s AC=%.0fW Today=%.2fkWh In1=%.2f In2=%.2f entities=%s",
+                    "WR %s AC=%.0fW Today=%.2fkWh In1=%.2f In2=%.2f mode=%s entities=%s",
                     sn,
                     values.get("ac_power") or 0,
                     values.get("energy_today") or 0,
                     values.get("energy_today_input_1") or 0,
                     values.get("energy_today_input_2") or 0,
+                    self.sensor_mode,
                     entity_n,
                 )
             except GrowattApiError as exc:

@@ -114,6 +114,7 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "energy_local_load_today": ("Local Load Today", "kWh", "energy", "total_increasing", "sensor"),
     "energy_local_load_total": ("Local Load Total", "kWh", "energy", "total_increasing", "sensor"),
     "status": ("Status", None, None, None, "sensor"),
+    "product": ("Product", None, None, None, "sensor"),
 }
 
 _META_SKIP = {"family", "label", "time", "device_name"}
@@ -353,9 +354,14 @@ class HaMqtt:
 
     def ensure_discovery(self, serial: str, label: str, values: dict[str, Any]) -> None:
         keys = sorted(k for k in values if k not in _META_SKIP and values[k] is not None)
-        device_name = str(values.get("device_name") or values.get("alias") or serial)
-        model = str(values.get("model_text") or values.get("model") or f"Growatt {label}")
-        sig = f"{self.sensor_mode}|{device_name}|{model}|{'|'.join(keys)}"
+        label_clean = (label or "Growatt").strip()
+        # Gerätename immer mit Produkt (Nexa/Noah) – überschreibt alte HA-Namen
+        serial_short = serial if len(serial) <= 16 else serial[-12:]
+        device_name = f"{label_clean} {serial_short}"
+        if values.get("device_name") and label_clean.lower() in str(values.get("device_name")).lower():
+            device_name = str(values["device_name"])
+        model = f"Growatt {label_clean}"
+        sig = f"v2|{self.sensor_mode}|{device_name}|{model}|{'|'.join(keys)}"
         node = slug(serial)
         new_keys = set(keys)
         self._wanted_by_node[node] = new_keys
