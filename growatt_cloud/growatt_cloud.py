@@ -26,7 +26,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import ensure_storage_slots, merge_device_values
 
-VERSION = "0.1.27"
+VERSION = "0.1.25"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 SOLAR_SPLIT_ENERGY_PATH = "/data/growatt_solar_split_energy.json"
 # Legacy-Pfad (Migration)
