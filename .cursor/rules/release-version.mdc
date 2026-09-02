@@ -1,0 +1,32 @@
+---
+description: Release-Version nur nach GHCR-Build – niemals manuell in config.yaml
+globs: growatt_cloud/config.yaml,growatt_cloud/growatt_cloud.py,.github/workflows/release-addon.yml,.github/workflows/version-guard.yml,RELEASE.md
+alwaysApply: true
+---
+
+# Release-Version (Home Assistant Add-on)
+
+Lies `RELEASE.md` vor jedem Release oder wenn `version` / `VERSION` betroffen sind.
+
+## Niemals im Feature-Commit
+
+- `growatt_cloud/config.yaml` → `version`
+- `growatt_cloud/growatt_cloud.py` → `VERSION`
+
+Beide müssen immer **gleich** sein und auf der **letzten veröffentlichten** Release-Version bleiben, bis der Release-Workflow läuft.
+
+## Richtiger Ablauf
+
+1. Code + CHANGELOG-Eintrag committen (**ohne** Versionsbump)
+2. Push nach `master`
+3. GitHub Actions → **Release add-on** mit neuer `x.y.z`
+4. Erst nach grünem Workflow: HA Repository aktualisieren → Update
+
+Der einzige erlaubte Versions-Up-Commit hat exakt die Message:
+`Release x.y.z (image published first).`
+
+## Nicht ändern ohne explizite Nutzer-Anfrage
+
+- `.github/workflows/release-addon.yml` (Reihenfolge Image → dann Git-Bump)
+- `.github/workflows/version-guard.yml`
+- `scripts/check-release-version.sh`

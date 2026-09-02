@@ -1,3 +1,5 @@
+# VERBINDLICH: version NUR via Release-Workflow setzen – siehe ../RELEASE.md
+# Nicht manuell ändern. CI (version-guard) blockiert Upgrades ohne Release-Commit.
 name: Growatt Cloud
 version: "0.1.27"
 slug: growatt_cloud
