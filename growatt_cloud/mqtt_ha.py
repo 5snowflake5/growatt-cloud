@@ -128,7 +128,7 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
 
 _META_SKIP = {"family", "label", "time", "device_name"}
 
-DISCOVERY_SIG_VERSION = "v7"
+DISCOVERY_SIG_VERSION = "v8"
 
 # Frühere Fake-Geräte (virtueller 2. Noah) – einmalig per MQTT Discovery löschen
 _FAKE_TOWER_OBJECT_IDS = frozenset({
