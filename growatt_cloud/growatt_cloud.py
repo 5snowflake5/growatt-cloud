@@ -20,7 +20,7 @@ from mqtt_ha import HaMqtt
 from sensors import ensure_storage_slots, merge_device_values
 
 # VERSION = config.yaml version; nur Release-Workflow ändert beides
-VERSION = "0.1.28"
+VERSION = "0.1.29"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 SOLAR_SPLIT_ENERGY_PATH = "/data/growatt_solar_split_energy.json"
 # Legacy-Pfad (Migration)
