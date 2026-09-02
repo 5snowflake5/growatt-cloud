@@ -4,6 +4,10 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.29] – 2026-09-02
+
+### Changed
+- Gerätename ohne 2T/3T-Suffix (z. B. Nexa statt Nexa 3T).
 ## [Unreleased]
 
 ### Fixed
