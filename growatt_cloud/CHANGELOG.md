@@ -4,6 +4,14 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.28] – 2026-09-02
+
+### Fixed
+- GHCR-Images werden beim Release **public** gesetzt – HA kann wieder pullen.
+
+### Changed
+- Add-on-Beschreibung gekürzt (kein Marketing-Text mehr).
+
 ## [0.1.27] – 2026-09-02
 
 ### Changed
