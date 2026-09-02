@@ -46,6 +46,17 @@ Nach dem Update App **neu starten**. Im Log sollte stehen:
 Falls in HA trotzdem Alt-Entities bleiben: Gerät einmal löschen
 (Einstellungen → Geräte → Growatt … → löschen), App neu starten.
 
+## Stack / Solar-Split (ab 0.1.27)
+
+- **`battery1`–`battery4`**: Batterie-**Packs** im Stack (nicht „Speicher 2“ oder „Turm 3“ – das war irreführend).
+- **`battery_num`**: wie viele Packs aktiv gemeldet werden.
+- **PV1–PV4**: alle Solar-**Eingänge** am Master-Gerät (ein Noah/Nexa mit WLAN).
+- **`solar_power_storage1`** = PV1 + PV2 + PV3 + PV4 (Summe der String-Messungen am Master).
+- **`solar_power_other_storage`** = `Solar Power − PV1–4` – Solar von weiteren Speichern/Türmen **ohne** eigene String-Messung am Master (nicht zuordenbar zu Turm 2 vs. 3).
+- **`generation_today_storage1` / `generation_today_other_storage`**: Tages-kWh per Integration der Live-Leistung.
+
+Ein **zweites Cloud-Gerät** (eigene Serial, z. B. zweiter Nexa) hat **eigene** PV1–4 und `generation_today` – das ist ein separater Speicher, kein „Other Storage“ am Master.
+
 ## Geräte
 
 Serials und Typen werden **automatisch** aus der Geräteliste erkannt.

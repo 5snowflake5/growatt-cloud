@@ -24,11 +24,13 @@ from api import (
     MIN_INTERVAL_OTHER_S,
 )
 from mqtt_ha import HaMqtt
-from sensors import merge_device_values
+from sensors import ensure_storage_slots, merge_device_values
 
-VERSION = "0.1.25"
+VERSION = "0.1.27"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
-TOWER_ENERGY_PATH = "/data/growatt_tower_energy.json"
+SOLAR_SPLIT_ENERGY_PATH = "/data/growatt_solar_split_energy.json"
+# Legacy-Pfad (Migration)
+_LEGACY_TOWER_ENERGY_PATH = "/data/growatt_tower_energy.json"
 LOG = logging.getLogger("growatt-cloud")
 
 STORAGE_TYPES = {"noah", "nexa"}
@@ -107,66 +109,80 @@ class Bridge:
         self._last_storage: dict[str, float] = {}
         self._last_inverter: dict[str, float] = {}
         self._pack_floor: dict[str, int] = {}  # SN → max gesehene Packs (nie runter)
-        self._tower_wh: dict[str, dict[str, float]] = {}  # SN → {day, t1, t2, ts}
-        self._load_tower_energy()
+        self._solar_split_wh: dict[str, dict[str, float]] = {}  # SN → {day, strings, other, ts}
+        self._load_solar_split_energy()
 
     def request_stop(self, *_args) -> None:
         self.stop = True
 
-    def _load_tower_energy(self) -> None:
+    def _load_solar_split_energy(self) -> None:
+        import json
+
+        for path in (SOLAR_SPLIT_ENERGY_PATH, _LEGACY_TOWER_ENERGY_PATH):
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    raw = json.load(fh)
+                if isinstance(raw, dict):
+                    migrated: dict[str, dict[str, float]] = {}
+                    for sn, state in raw.items():
+                        if not isinstance(state, dict):
+                            continue
+                        migrated[sn] = {
+                            "day": state.get("day"),
+                            "strings": float(state.get("strings") or state.get("t1") or 0.0),
+                            "other": float(state.get("other") or state.get("t2") or 0.0),
+                            "ts": float(state.get("ts") or 0.0),
+                        }
+                    self._solar_split_wh = migrated
+                    return
+            except Exception as exc:
+                LOG.debug("Solar-Split laden (%s): %s", path, exc)
+        self._solar_split_wh = {}
+
+    def _save_solar_split_energy(self) -> None:
         try:
-            if not os.path.isfile(TOWER_ENERGY_PATH):
-                return
+            os.makedirs(os.path.dirname(SOLAR_SPLIT_ENERGY_PATH), exist_ok=True)
             import json
 
-            with open(TOWER_ENERGY_PATH, encoding="utf-8") as fh:
-                raw = json.load(fh)
-            if isinstance(raw, dict):
-                self._tower_wh = {k: v for k, v in raw.items() if isinstance(v, dict)}
-        except Exception:
-            self._tower_wh = {}
-
-    def _save_tower_energy(self) -> None:
-        try:
-            os.makedirs(os.path.dirname(TOWER_ENERGY_PATH), exist_ok=True)
-            import json
-
-            with open(TOWER_ENERGY_PATH, "w", encoding="utf-8") as fh:
-                json.dump(self._tower_wh, fh)
+            with open(SOLAR_SPLIT_ENERGY_PATH, "w", encoding="utf-8") as fh:
+                json.dump(self._solar_split_wh, fh)
         except Exception as exc:
-            LOG.debug("Tower-Energy speichern: %s", exc)
+            LOG.debug("Solar-Split speichern: %s", exc)
 
     def _apply_sticky_packs(self, sn: str, values: dict[str, Any]) -> None:
         packs = int(values.get("battery_num") or 1)
         packs = max(1, min(packs, 4))
         floor = max(packs, self._pack_floor.get(sn, 1))
         self._pack_floor[sn] = floor
+        values["battery_num"] = packs
+        ensure_storage_slots(values)
         if floor > packs:
-            values["battery_num"] = floor
             for i in range(packs + 1, floor + 1):
                 values.setdefault(f"battery{i}_soc", 0.0)
                 values.setdefault(f"battery{i}_temp", 0.0)
 
-    def _accumulate_tower_energy(self, sn: str, values: dict[str, Any]) -> None:
-        """Noah liefert keine epv3/epv4 – Turm-Tages-kWh aus Live-PV integrieren."""
+    def _accumulate_solar_split_energy(self, sn: str, values: dict[str, Any]) -> None:
+        """Tages-kWh für PV1–4 (Master) und Other Storage aus Live-Leistung integrieren."""
         now = time.time()
         day = time.strftime("%Y-%m-%d", time.localtime(now))
-        state = self._tower_wh.get(sn) or {"day": day, "t1": 0.0, "t2": 0.0, "ts": now}
+        state = self._solar_split_wh.get(sn) or {"day": day, "strings": 0.0, "other": 0.0, "ts": now}
         if state.get("day") != day:
-            state = {"day": day, "t1": 0.0, "t2": 0.0, "ts": now}
+            state = {"day": day, "strings": 0.0, "other": 0.0, "ts": now}
         last = float(state.get("ts") or now)
         dt_h = max(0.0, min((now - last) / 3600.0, 2.0))
-        t1_w = float(values.get("solar_power_tower1") or 0.0)
-        t2_w = float(values.get("solar_power_tower2") or 0.0)
+        strings_w = float(values.get("solar_power_storage1") or 0.0)
+        other_w = float(values.get("solar_power_other_storage") or 0.0)
         if last and dt_h > 0:
-            state["t1"] = float(state.get("t1") or 0.0) + t1_w * dt_h
-            state["t2"] = float(state.get("t2") or 0.0) + t2_w * dt_h
+            state["strings"] = float(state.get("strings") or 0.0) + strings_w * dt_h
+            state["other"] = float(state.get("other") or 0.0) + other_w * dt_h
         state["ts"] = now
         state["day"] = day
-        self._tower_wh[sn] = state
-        values["generation_today_tower1"] = round(float(state["t1"]) / 1000.0, 3)
-        values["generation_today_tower2"] = round(float(state["t2"]) / 1000.0, 3)
-        self._save_tower_energy()
+        self._solar_split_wh[sn] = state
+        values["generation_today_storage1"] = round(float(state["strings"]) / 1000.0, 3)
+        values["generation_today_other_storage"] = round(float(state["other"]) / 1000.0, 3)
+        self._save_solar_split_energy()
 
     def refresh_devices(self, force: bool = False) -> None:
         now = time.monotonic()
@@ -227,26 +243,24 @@ class Bridge:
                 raw = self.api.query_last_data(sn, api_type)
                 values = self._enrich(sn, api_type, raw, "storage")
                 self._apply_sticky_packs(sn, values)
-                self._accumulate_tower_energy(sn, values)
+                self._accumulate_solar_split_energy(sn, values)
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
                 self._last_storage[sn] = time.monotonic()
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
-                    "%s %s SoC=%s%% PV=%.0fW S1=%.0fW (PV1=%.0f PV2=%.0f) S2=%.0fW(Rest) "
-                    "Out=%.0fW Today=%.2fkWh S1=%.2f S2=%.2fkWh packs=%s bat2=%s%% mode=%s entities=%s",
+                    "%s %s SoC=%s%% PV=%.0fW PV1-4=%.0fW Other=%.0fW "
+                    "Out=%.0fW Today=%.2fkWh PV1-4=%.2f Other=%.2fkWh packs=%s bat2=%s%% mode=%s entities=%s",
                     values["label"],
                     sn,
                     values.get("soc"),
                     values.get("solar_power") or 0,
-                    values.get("solar_power_tower1") or 0,
-                    values.get("pv1_power") or 0,
-                    values.get("pv2_power") or 0,
-                    values.get("solar_power_tower2") or 0,
+                    values.get("solar_power_storage1") or 0,
+                    values.get("solar_power_other_storage") or 0,
                     values.get("output_power") or 0,
                     values.get("generation_today") or 0,
-                    values.get("generation_today_tower1") or 0,
-                    values.get("generation_today_tower2") or 0,
+                    values.get("generation_today_storage1") or 0,
+                    values.get("generation_today_other_storage") or 0,
                     values.get("battery_num"),
                     values.get("battery2_soc"),
                     self.sensor_mode,

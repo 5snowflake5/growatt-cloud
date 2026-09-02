@@ -120,33 +120,39 @@ def detect_storage_label(raw: dict[str, Any], serial: str | None = None) -> str:
 
 
 def storage_device_name(raw: dict[str, Any], label: str, serial: str) -> str:
-    """Immer mit Produktnamen – sonst bleibt in HA ewig 'Noah'."""
-    packs = _int(
-        raw,
-        "batteryPackageQuantity",
-        "battery_package_quantity",
-        "batteryNum",
-        "battery_num",
-        default=1,
-    )
-    packs = max(1, min(packs, 4))
-    stack = f" {packs}T" if packs > 1 else ""
-
+    """Stabiler HA-Gerätename ohne Stack-Suffix (Anzahl → sensor.battery_num)."""
     alias = _pick(raw, "alias", "Alias")
     if alias:
         a = str(alias).strip()
         if a and a.upper() != serial.upper():
             low = a.lower()
             if "nexa" in low or "noah" in low:
-                return f"{a}{stack}" if stack and stack.strip() not in a else a
-            return f"{label}{stack} ({a})"
+                return a
+            return f"{label} ({a})"
     model = _pick(raw, "model", "Model")
     if model and str(model).strip() and not str(model).strip().isdigit():
         m = str(model).strip()
         if label.lower() in m.lower():
-            return f"{m}{stack}" if packs > 1 and "T" not in m else m
-        return f"{label}{stack} ({m})"
-    return f"{label}{stack} {serial}"
+            return m
+        return f"{label} ({m})"
+    serial_short = serial if len(serial) <= 16 else serial[-12:]
+    return f"{label} {serial_short}"
+
+
+def _assign_storage_solar(out: dict[str, Any]) -> None:
+    """Master-Strings PV1–4 am Gerät; Rest = weitere Speicher ohne eigene String-Messung."""
+    strings = round(sum(float(out.get(f"pv{i}_power") or 0.0) for i in range(1, 5)), 1)
+    total_pv = float(out.get("solar_power") or 0.0)
+    other = round(max(0.0, total_pv - strings), 1)
+    out["solar_power_storage1"] = strings
+    out["solar_power_other_storage"] = other
+
+
+def ensure_storage_slots(values: dict[str, Any]) -> None:
+    """Immer 4 Batterie-Slots – Entity-IDs bleiben stabil beim Stack-Wachstum."""
+    for i in range(1, 5):
+        values.setdefault(f"battery{i}_soc", 0.0)
+        values.setdefault(f"battery{i}_temp", 0.0)
 
 
 def flatten_raw(raw: dict[str, Any] | None) -> dict[str, Any]:
@@ -262,14 +268,12 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
     }
 
     for i in range(1, 5):
-        if i > packs:
-            continue
         soc = _num(raw, f"battery{i}Soc", f"battery{i}_soc", default=None)
         temp = _num(raw, f"battery{i}Temp", f"battery{i}_temp", default=None)
         out[f"battery{i}_soc"] = soc if soc is not None else 0.0
         out[f"battery{i}_temp"] = temp if temp is not None else 0.0
 
-    # Immer alle 4 PV-Strings (auch 0 W). Bei 2-Turm-Stack: PV3/PV4 = Turm 2.
+    # Immer alle 4 PV-Strings (auch 0 W).
     for i in range(1, 5):
         v = _num(raw, f"pv{i}Voltage", f"pv{i}_voltage", default=0.0) or 0.0
         a = (
@@ -294,13 +298,7 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
         if t is not None:
             out[f"pv{i}_temp"] = t
 
-    out["solar_power_tower1"] = round(
-        (out.get("pv1_power") or 0.0) + (out.get("pv2_power") or 0.0), 1
-    )
-    # Noah: nur 2 Strings am Master. Speicher 2 ohne eigene String-Sensoren →
-    # Rest = Gesamt-PV (API ppv) − PV1 − PV2 (vom Nutzer bestätigt).
-    total_pv = float(out.get("solar_power") or 0.0)
-    out["solar_power_tower2"] = round(max(0.0, total_pv - out["solar_power_tower1"]), 1)
+    _assign_storage_solar(out)
 
     return out
 
@@ -903,7 +901,7 @@ def filter_published_values(
             _prune_min_noise(out, aggressive=True)
 
     out.update(meta)
-    # Speicher: PV1–4 sichtbar halten (ohne Tower-Semantik); Turm-Summen erzwingen
+    # Speicher: PV1–4 + Solar-Split (Master-Strings vs. Other Storage)
     if kind == "storage":
         for i in range(1, 5):
             for suffix, default in (
@@ -919,24 +917,17 @@ def filter_published_values(
             tkey = f"pv{i}_temp"
             if tkey in values and values[tkey] is not None:
                 out[tkey] = values[tkey]
-        for key in ("solar_power_tower1", "solar_power_tower2"):
+        for key in ("solar_power_storage1", "solar_power_other_storage"):
             if key in values:
                 out[key] = values[key]
             elif key not in out:
                 out[key] = 0.0
-        for key in ("generation_today_tower1", "generation_today_tower2"):
+        for key in ("generation_today_storage1", "generation_today_other_storage"):
             if key in values and values[key] is not None:
                 out[key] = values[key]
         packs = int(values.get("battery_num") or out.get("battery_num") or 1)
-        packs = max(1, min(packs, 4))
-        out["battery_num"] = packs
-        for i in range(1, packs + 1):
-            for suffix in ("soc", "temp"):
-                key = f"battery{i}_{suffix}"
-                if key in values:
-                    out[key] = values[key]
-                elif key not in out:
-                    out[key] = 0.0
+        out["battery_num"] = max(1, min(packs, 4))
+        ensure_storage_slots(out)
     return out
 
 
@@ -988,10 +979,10 @@ _CURATED_KEEP_STORAGE = {
     "pv4_power",
     "pv4_voltage",
     "pv4_current",
-    "solar_power_tower1",
-    "solar_power_tower2",
-    "generation_today_tower1",
-    "generation_today_tower2",
+    "solar_power_storage1",
+    "solar_power_other_storage",
+    "generation_today_storage1",
+    "generation_today_other_storage",
 }
 
 # Schlanker MIN-Kern (~Growatt-Server „sinnvoll“)
@@ -1086,12 +1077,7 @@ def merge_device_values(
     flat = {**flatten_raw(info), **flatten_raw(energy)}
     if kind == "storage":
         curated = _curated_storage(combined, serial=serial)
-        packs = int(curated.get("battery_num") or 1)
-        for i in range(packs + 1, 5):
-            for suffix in ("soc", "temp", "temp_f", "serial_num", "protect_status", "warn_status"):
-                flat.pop(f"battery{i}_{suffix}", None)
-                curated.pop(f"battery{i}_{suffix}", None)
-        for i in range(1, packs + 1):
+        for i in range(1, 5):
             flat.pop(f"battery{i}_temp_f", None)
     else:
         curated = _curated_min(combined)

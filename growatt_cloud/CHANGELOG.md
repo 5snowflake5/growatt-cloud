@@ -4,6 +4,27 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.27] – 2026-09-02
+
+### Changed
+- **Solar-Modell korrigiert:** `solar_power_storage1` = **PV1+PV2+PV3+PV4** (Master-Strings); `solar_power_other_storage` = Rest (`Solar − PV1–4`) für weitere Speicher ohne String-Messung.
+- Alte Sensoren `*_tower1/2` entfernt → `*_storage1` / `*_other_storage`.
+- **Battery-Namen:** nur noch „Battery 1 SoC“ usw. – kein doppeltes „(Speicher 1)“ / „(Tower 3)“ (Packs ≠ Türme).
+
+### Removed
+- Falsche Zuordnung PV3/4 = „Speicher 2“ / Turm 2.
+
+## [0.1.26] – 2026-09-02
+
+### Changed
+- **Stabile Entity-IDs beim Stack-Wachstum:** `battery1`–`battery4` werden immer angelegt (0 % wenn leer) – keine Full-Rediscovery mehr beim Nachrüsten einer Batterie.
+- **Gerätename ohne `2T`/`3T`-Suffix** – Stack-Größe weiter über `sensor.battery_num`.
+- **MQTT-Discovery inkrementell** (Signatur v6): neue Sensoren werden nachdiscovered, bestehende bleiben unangetastet.
+- **Turm-PV:** Speicher 2 = **PV3 + PV4**, wenn die Strings aktiv sind; sonst Fallback `Solar − PV1 − PV2` (Noah ohne PV3/4).
+
+### Fixed
+- Nexa/Multi-Stack: Turm 2 wurde fälschlich nur als Rest berechnet, obwohl PV3/PV4 gemeldet werden.
+
 ## [0.1.25] – 2026-08-26
 
 ### Changed
