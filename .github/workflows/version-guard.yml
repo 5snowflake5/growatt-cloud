@@ -1,12 +1,20 @@
 name: Version guard
 
-# config.yaml-Version darf nur im Release-Workflow steigen – sonst HA-Update-Race.
+# VERBINDLICH – siehe RELEASE.md
+# config.yaml/version und growatt_cloud.py/VERSION dürfen nur im Release-Workflow steigen.
 
 on:
   push:
     branches: [master, main]
     paths:
       - "growatt_cloud/config.yaml"
+      - "growatt_cloud/growatt_cloud.py"
+      - "scripts/check-release-version.sh"
+      - ".github/workflows/version-guard.yml"
+  pull_request:
+    paths:
+      - "growatt_cloud/config.yaml"
+      - "growatt_cloud/growatt_cloud.py"
 
 permissions:
   contents: read
@@ -19,28 +27,5 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Block manual version bumps
-        run: |
-          set -euo pipefail
-          OLD=$(git show HEAD~1:growatt_cloud/config.yaml 2>/dev/null | sed -n 's/^version: "\(.*\)"/\1/p' || true)
-          NEW=$(sed -n 's/^version: "\(.*\)"/\1/p' growatt_cloud/config.yaml | head -1)
-          MSG=$(git log -1 --format=%s)
-
-          if [[ -z "$OLD" || "$OLD" == "$NEW" ]]; then
-            echo "Version unverändert ($NEW)."
-            exit 0
-          fi
-
-          if [[ "$MSG" =~ ^Release\ .*\ \(image\ published\ first\)\.$ ]]; then
-            echo "Release-Commit erlaubt: $OLD → $NEW"
-            exit 0
-          fi
-
-          HIGHER=$(printf '%s\n' "$OLD" "$NEW" | sort -V | tail -1)
-          if [[ "$HIGHER" == "$NEW" && "$NEW" != "$OLD" ]]; then
-            echo "::error::Version $OLD → $NEW in config.yaml – nur via Actions → Release add-on."
-            echo "Code committen mit alter Version, dann Release-Workflow starten."
-            exit 1
-          fi
-
-          echo "Version $OLD → $NEW erlaubt (kein Upgrade ohne Release-Commit)."
+      - name: Enforce release version policy
+        run: bash scripts/check-release-version.sh

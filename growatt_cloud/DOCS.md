@@ -4,7 +4,9 @@ Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## Releases
 
-Version in `config.yaml` wird erst gesetzt, **nachdem** das Docker-Image auf GHCR liegt (Actions → **Release add-on**). So erscheint in HA kein Update ohne Image.
+**Verbindlich:** [RELEASE.md](../RELEASE.md) im Repo-Root – Version **niemals** manuell in `config.yaml` setzen.
+
+Kurz: Code pushen → Actions **Release add-on** → erst danach HA updaten. CI blockiert manuelle Versions-Upgrades.
 
 ## Warum
 

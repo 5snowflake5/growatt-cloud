@@ -14,18 +14,16 @@ Images kommen von GHCR (kein Build auf dem Pi).
 
 ## Releases (wichtig)
 
-Home Assistant liest die Version aus `config.yaml` im Git-Repo. **Niemals** manuell hochsetzen.
+**→ Vollständige Regeln: [RELEASE.md](RELEASE.md)**
 
-1. Code nach `master` pushen – **`config.yaml` bleibt auf der letzten Release-Version** (z. B. `0.1.25`)
-2. **GitHub → Actions → „Release add-on“** mit neuer Version (z. B. `0.1.27`) starten
-3. Workflow: Image nach GHCR → **erst danach** Versionsbump-Commit (`Release x.y.z (image published first).`)
+Home Assistant liest die Version aus `config.yaml`. **Niemals** manuell hochsetzen.
+
+1. Code nach `master` pushen – **`config.yaml` / `VERSION` unverändert lassen**
+2. **GitHub → Actions → „Release add-on“** mit neuer Version starten
+3. Workflow: Image → Commit `Release x.y.z (image published first).`
 4. Dann in HA: Repository aktualisieren → App updaten
 
-CI blockiert Pushs, die `config.yaml` ohne Release-Workflow hochsetzen.
-
-**Falsch:** Version in `config.yaml` / `growatt_cloud.py` im Feature-Commit ändern → HA zeigt Update, Image fehlt noch.
-
-**Richtig:** Changelog schreiben, Code pushen, Release-Workflow laufen lassen.
+CI (`version-guard`) und Cursor-Rule (`.cursor/rules/release-version.mdc`) erzwingen das dauerhaft.
 
 ## Kurz
 
