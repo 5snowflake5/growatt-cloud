@@ -4,6 +4,11 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+- HA-Gerätename: `2T`/`3T` aus Growatt-Model/Alias entfernt (z. B. „Nexa 3T …“ → „Nexa 0HVR…“).
+
 ## [0.1.28] – 2026-09-02
 
 ### Fixed

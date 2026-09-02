@@ -119,23 +119,41 @@ def detect_storage_label(raw: dict[str, Any], serial: str | None = None) -> str:
     return "Noah"
 
 
+_STACK_MODEL_SUFFIX = re.compile(r"\s*\d+T\b", re.IGNORECASE)
+
+
+def _strip_stack_model_suffix(name: str) -> str:
+    """Growatt-Modelle wie „Nexa 3T“ = Produktlinie, nicht Turm-Nummer in HA."""
+    cleaned = _STACK_MODEL_SUFFIX.sub("", name)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def storage_device_name(raw: dict[str, Any], label: str, serial: str) -> str:
     """Stabiler HA-Gerätename ohne Stack-Suffix (Anzahl → sensor.battery_num)."""
+    serial_short = serial if len(serial) <= 16 else serial[-12:]
+
+    def finalize(name: str) -> str:
+        cleaned = _strip_stack_model_suffix(name)
+        if not cleaned:
+            return f"{label} {serial_short}"
+        if re.fullmatch(r"(nexa|noah)", cleaned, re.IGNORECASE):
+            return f"{label} {serial_short}"
+        return cleaned
+
     alias = _pick(raw, "alias", "Alias")
     if alias:
         a = str(alias).strip()
         if a and a.upper() != serial.upper():
             low = a.lower()
             if "nexa" in low or "noah" in low:
-                return a
-            return f"{label} ({a})"
+                return finalize(a)
+            return finalize(f"{label} ({a})")
     model = _pick(raw, "model", "Model")
     if model and str(model).strip() and not str(model).strip().isdigit():
         m = str(model).strip()
         if label.lower() in m.lower():
-            return m
-        return f"{label} ({m})"
-    serial_short = serial if len(serial) <= 16 else serial[-12:]
+            return finalize(m)
+        return finalize(f"{label} ({m})")
     return f"{label} {serial_short}"
 
 
