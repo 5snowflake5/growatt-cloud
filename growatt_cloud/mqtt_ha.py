@@ -44,14 +44,14 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "connectivity": ("Connectivity", None, "connectivity", None, "binary_sensor"),
     "wifi_signal": ("WiFi Signal", "dBm", "signal_strength", "measurement", "sensor"),
     "last_update": ("Last Update", None, "timestamp", None, "sensor"),
-    "battery1_soc": ("Battery 1 SoC (Speicher 1)", "%", "battery", "measurement", "sensor"),
-    "battery1_temp": ("Battery 1 Temperature (Speicher 1)", "°C", "temperature", "measurement", "sensor"),
-    "battery2_soc": ("Battery 2 SoC (Speicher 2)", "%", "battery", "measurement", "sensor"),
-    "battery2_temp": ("Battery 2 Temperature (Speicher 2)", "°C", "temperature", "measurement", "sensor"),
-    "battery3_soc": ("Battery 3 SoC (Tower 3)", "%", "battery", "measurement", "sensor"),
-    "battery3_temp": ("Battery 3 Temperature (Tower 3)", "°C", "temperature", "measurement", "sensor"),
-    "battery4_soc": ("Battery 4 SoC (Tower 4)", "%", "battery", "measurement", "sensor"),
-    "battery4_temp": ("Battery 4 Temperature (Tower 4)", "°C", "temperature", "measurement", "sensor"),
+    "battery1_soc": ("Battery 1 SoC", "%", "battery", "measurement", "sensor"),
+    "battery1_temp": ("Battery 1 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "battery2_soc": ("Battery 2 SoC", "%", "battery", "measurement", "sensor"),
+    "battery2_temp": ("Battery 2 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "battery3_soc": ("Battery 3 SoC", "%", "battery", "measurement", "sensor"),
+    "battery3_temp": ("Battery 3 Temperature", "°C", "temperature", "measurement", "sensor"),
+    "battery4_soc": ("Battery 4 SoC", "%", "battery", "measurement", "sensor"),
+    "battery4_temp": ("Battery 4 Temperature", "°C", "temperature", "measurement", "sensor"),
     "pv1_power": ("PV1 Power", "W", "power", "measurement", "sensor"),
     "pv1_voltage": ("PV1 Voltage", "V", "voltage", "measurement", "sensor"),
     "pv1_current": ("PV1 Current", "A", "current", "measurement", "sensor"),
@@ -68,10 +68,10 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "pv2_temp": ("PV2 Temperature", "°C", "temperature", "measurement", "sensor"),
     "pv3_temp": ("PV3 Temperature", "°C", "temperature", "measurement", "sensor"),
     "pv4_temp": ("PV4 Temperature", "°C", "temperature", "measurement", "sensor"),
-    "solar_power_tower1": ("Solar Power Speicher 1", "W", "power", "measurement", "sensor"),
-    "solar_power_tower2": ("Solar Power Speicher 2", "W", "power", "measurement", "sensor"),
-    "generation_today_tower1": ("Generation Today Speicher 1", "kWh", "energy", "total_increasing", "sensor"),
-    "generation_today_tower2": ("Generation Today Speicher 2", "kWh", "energy", "total_increasing", "sensor"),
+    "solar_power_storage1": ("Solar Power PV1-4", "W", "power", "measurement", "sensor"),
+    "solar_power_other_storage": ("Solar Power Other Storage", "W", "power", "measurement", "sensor"),
+    "generation_today_storage1": ("Generation Today PV1-4", "kWh", "energy", "total_increasing", "sensor"),
+    "generation_today_other_storage": ("Generation Today Other Storage", "kWh", "energy", "total_increasing", "sensor"),
     "ac_power": ("AC Power", "W", "power", "measurement", "sensor"),
     "ac_power_r": ("AC Power R", "W", "power", "measurement", "sensor"),
     "ac_power_s": ("AC Power S", "W", "power", "measurement", "sensor"),
@@ -127,6 +127,8 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
 }
 
 _META_SKIP = {"family", "label", "time", "device_name"}
+
+DISCOVERY_SIG_VERSION = "v7"
 
 # Frühere Fake-Geräte (virtueller 2. Noah) – einmalig per MQTT Discovery löschen
 _FAKE_TOWER_OBJECT_IDS = frozenset({
@@ -387,113 +389,138 @@ class HaMqtt:
             LOG.info("MQTT Purge-Subscribe %s", topic)
         self._subscribed_nodes.add(node)
 
-    def ensure_discovery(self, serial: str, label: str, values: dict[str, Any]) -> None:
-        keys = sorted(k for k in values if k not in _META_SKIP and values[k] is not None)
+    def _resolve_device_name(self, label: str, serial: str, values: dict[str, Any]) -> str:
         label_clean = (label or "Growatt").strip()
-        # Gerätename immer mit Produkt (Nexa/Noah) – überschreibt alte HA-Namen
         serial_short = serial if len(serial) <= 16 else serial[-12:]
         device_name = f"{label_clean} {serial_short}"
-        if values.get("device_name") and label_clean.lower() in str(values.get("device_name")).lower():
-            device_name = str(values["device_name"])
-        model = f"Growatt {label_clean}"
-        # v5: neue unique_id + Discovery-Topic → HA legt Entity-IDs neu an
-        # (alte growatt_cloud_* unique_ids hatten Name-Slug/Kollisionen wie output_power_2)
-        sig = f"v5|{self.sensor_mode}|{device_name}|{model}|{'|'.join(keys)}"
+        raw_name = values.get("device_name")
+        if raw_name and label_clean.lower() in str(raw_name).lower():
+            device_name = str(raw_name).strip()
+        return device_name
+
+    def _publish_discovery_entity(
+        self,
+        node: str,
+        device: dict[str, Any],
+        object_id: str,
+        val: Any,
+    ) -> None:
+        name, unit, device_class, state_class, component = infer_meta(object_id)
+        if isinstance(val, str) and val.upper() in ("ON", "OFF") and component == "sensor":
+            if object_id in (
+                "heating",
+                "connectivity",
+                "allow_grid_charging",
+                "lost",
+                "ct_flag",
+                "shelly_flag",
+            ) or object_id.endswith("_enable"):
+                component = "binary_sensor"
+        ha_oid = f"gc_{node}_{object_id}"
+        disc_oid = f"gc_{object_id}"
+        topic = f"{self.discovery_prefix}/{component}/{node}/{disc_oid}/config"
+        state_topic = f"{self.state_prefix}/{node}/{object_id}"
+        entity_id = f"{component}.{ha_oid}"
+        payload: dict[str, Any] = {
+            "name": name,
+            "unique_id": ha_oid,
+            "object_id": ha_oid,
+            "default_entity_id": entity_id,
+            "state_topic": state_topic,
+            "device": device,
+            "availability_topic": f"{self.state_prefix}/status",
+            "payload_available": "online",
+            "payload_not_available": "offline",
+        }
+        if component == "binary_sensor":
+            payload["payload_on"] = "ON"
+            payload["payload_off"] = "OFF"
+        if unit:
+            payload["unit_of_measurement"] = unit
+        if device_class:
+            payload["device_class"] = device_class
+        if state_class:
+            payload["state_class"] = state_class
+        if device_class == "energy":
+            payload["state_class"] = "total_increasing"
+        if device_class == "timestamp" and not (isinstance(val, str) and "T" in val):
+            payload.pop("device_class", None)
+        self._pub(topic, json.dumps(payload), retain=True)
+
+    def ensure_discovery(self, serial: str, label: str, values: dict[str, Any]) -> None:
+        keys = sorted(k for k in values if k not in _META_SKIP and values[k] is not None)
+        device_name = self._resolve_device_name(label, serial, values)
+        model = f"Growatt {(label or 'Growatt').strip()}"
+        sig = f"{DISCOVERY_SIG_VERSION}|{self.sensor_mode}|{slug(serial)}"
         node = slug(serial)
         new_keys = set(keys)
         self._wanted_by_node[node] = new_keys
         self._subscribe_purge(node)
 
         old_keys = self._discovery_keys.get(serial) or set()
-        # Nur wirklich entfernte Keys + Junk, nie aktuelle useful/Tower-Sensoren
-        stale = old_keys - new_keys
-        if serial not in self._stale_purged:
-            stale |= set(STALE_DISCOVERY_KEYS) - new_keys - set(PROTECTED_DISCOVERY_KEYS)
-        need_publish = self._discovery_sig.get(serial) != sig
-        need_purge = serial not in self._stale_purged or need_publish
+        removed = old_keys - new_keys
+        added = new_keys - old_keys
+        mode_changed = self._discovery_sig.get(serial) != sig
 
-        if need_purge and stale:
-            for gone in sorted(stale):
+        if serial not in self._stale_purged:
+            stale_once = set(STALE_DISCOVERY_KEYS) - new_keys - set(PROTECTED_DISCOVERY_KEYS)
+            for gone in sorted(stale_once):
                 self._clear_discovery(node, gone)
-            LOG.info("HA-Discovery-Purge %s → %s Alt-Entities entfernt", serial, len(stale))
+            if stale_once:
+                LOG.info("HA-Discovery-Purge %s → %s Alt-Entities entfernt", serial, len(stale_once))
             self._stale_purged.add(serial)
 
-        if not need_publish:
+        if removed:
+            for gone in sorted(removed):
+                self._clear_discovery(node, gone)
+            LOG.info("HA-Discovery-Purge %s → %s Entities entfernt", serial, len(removed))
+
+        if not mode_changed and not added:
             self._discovery_keys[serial] = new_keys
             self._save_discovery_keys()
             self._purge_fake_tower_devices(serial)
             return
 
-        # Alte Discovery (Topic ohne gc_ + alte unique_id) zuerst weg, sonst behält HA
-        # die kaputten Entity-IDs (…_output_power_2 usw.).
-        for object_id in sorted(new_keys | old_keys):
-            self._clear_discovery_config(node, object_id)
-        time.sleep(0.4)
-
         device = self._device(serial, device_name, model)
+        publish_keys = keys if mode_changed else sorted(added)
+
+        if mode_changed:
+            for object_id in sorted(new_keys | old_keys):
+                self._clear_discovery_config(node, object_id)
+            time.sleep(0.4)
+
         count = 0
-        for object_id in keys:
-            name, unit, device_class, state_class, component = infer_meta(object_id)
-            val = values.get(object_id)
-            if isinstance(val, str) and val.upper() in ("ON", "OFF") and component == "sensor":
-                if object_id in (
-                    "heating",
-                    "connectivity",
-                    "allow_grid_charging",
-                    "lost",
-                    "ct_flag",
-                    "shelly_flag",
-                ) or object_id.endswith("_enable"):
-                    component = "binary_sensor"
-            # unique_id NEU (gc_…) → HA erstellt Entities frisch mit default_entity_id
-            ha_oid = f"gc_{node}_{object_id}"
-            unique = ha_oid
-            disc_oid = f"gc_{object_id}"
-            topic = f"{self.discovery_prefix}/{component}/{node}/{disc_oid}/config"
-            state_topic = f"{self.state_prefix}/{node}/{object_id}"
-            entity_id = f"{component}.{ha_oid}"
-            payload: dict[str, Any] = {
-                "name": name,
-                "unique_id": unique,
-                "object_id": ha_oid,
-                "default_entity_id": entity_id,
-                "state_topic": state_topic,
-                "device": device,
-                "availability_topic": f"{self.state_prefix}/status",
-                "payload_available": "online",
-                "payload_not_available": "offline",
-            }
-            if component == "binary_sensor":
-                payload["payload_on"] = "ON"
-                payload["payload_off"] = "OFF"
-            if unit:
-                payload["unit_of_measurement"] = unit
-            if device_class:
-                payload["device_class"] = device_class
-            if state_class:
-                payload["state_class"] = state_class
-            if device_class == "energy":
-                payload["state_class"] = "total_increasing"
-            if device_class == "timestamp" and not (isinstance(val, str) and "T" in val):
-                payload.pop("device_class", None)
-            self._pub(topic, json.dumps(payload), retain=True)
+        for object_id in publish_keys:
+            self._publish_discovery_entity(node, device, object_id, values.get(object_id))
             count += 1
+
         self._discovery_sig[serial] = sig
         self._discovery_keys[serial] = new_keys
         self._stale_purged.add(serial)
         self._save_discovery_keys()
         self._pub(f"{self.state_prefix}/status", "online", retain=True)
-        LOG.info(
-            "HA-Discovery %s (%s) %s mode=%s → %s Entities (IDs gc_%s_<key>)",
-            label,
-            device_name,
-            serial,
-            self.sensor_mode,
-            count,
-            node,
-        )
+        if mode_changed:
+            LOG.info(
+                "HA-Discovery %s (%s) %s mode=%s → %s Entities (IDs gc_%s_<key>)",
+                label,
+                device_name,
+                serial,
+                self.sensor_mode,
+                count,
+                node,
+            )
+        else:
+            LOG.info(
+                "HA-Discovery +%s %s (%s) mode=%s (gc_%s_<key>)",
+                count,
+                device_name,
+                serial,
+                self.sensor_mode,
+                node,
+            )
         self._purge_fake_tower_devices(serial)
-        time.sleep(0.25)
+        if mode_changed:
+            time.sleep(0.25)
 
     def _purge_fake_tower_devices(self, serial: str) -> None:
         """Einmalig: virtuelle Noah Speicher 2/Tower-Geräte aus MQTT Discovery entfernen."""

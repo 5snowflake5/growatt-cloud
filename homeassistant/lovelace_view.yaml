@@ -51,10 +51,10 @@ views:
             entities:
               - entity: sensor.gc_0pvp00ed26ut03e9_solar_power
                 name: Solar gesamt
-              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_tower1
-                name: Solar Speicher 1 (PV1+PV2)
-              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_tower2
-                name: Solar Speicher 2 (Rest)
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_storage1
+                name: Solar PV1–4 (Master)
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_other_storage
+                name: Solar Other Storage
               - entity: sensor.gc_0pvp00ed26ut03e9_output_power
                 name: Abgabe
               - entity: sensor.gc_0pvp00ed26ut03e9_charging_power
@@ -71,31 +71,33 @@ views:
           - type: markdown
             content: |
               {% set total = states('sensor.gc_0pvp00ed26ut03e9_generation_today') | float(0) %}
-              {% set s1 = states('sensor.gc_0pvp00ed26ut03e9_generation_today_tower1') | float(0) %}
-              {% set s2 = states('sensor.gc_0pvp00ed26ut03e9_generation_today_tower2') | float(0) %}
-              {% set sum = s1 + s2 %}
+              {% set pv14 = states('sensor.gc_0pvp00ed26ut03e9_generation_today_storage1') | float(0) %}
+              {% set other = states('sensor.gc_0pvp00ed26ut03e9_generation_today_other_storage') | float(0) %}
+              {% set sum = pv14 + other %}
               {% set live = states('sensor.gc_0pvp00ed26ut03e9_solar_power') | float(0) %}
               {% set p1 = states('sensor.gc_0pvp00ed26ut03e9_pv1_power') | float(0) %}
               {% set p2 = states('sensor.gc_0pvp00ed26ut03e9_pv2_power') | float(0) %}
-              {% set rest = states('sensor.gc_0pvp00ed26ut03e9_solar_power_tower2') | float(0) %}
+              {% set p3 = states('sensor.gc_0pvp00ed26ut03e9_pv3_power') | float(0) %}
+              {% set p4 = states('sensor.gc_0pvp00ed26ut03e9_pv4_power') | float(0) %}
+              {% set other_w = states('sensor.gc_0pvp00ed26ut03e9_solar_power_other_storage') | float(0) %}
 
               **Growatt Generation Today:** {{ total | round(2) }} kWh  
-              **Speicher 1 (integriert):** {{ s1 | round(2) }} kWh  
-              **Speicher 2 (integriert):** {{ s2 | round(2) }} kWh  
-              **Summe S1+S2:** {{ sum | round(2) }} kWh
+              **PV1–4 (integriert):** {{ pv14 | round(2) }} kWh  
+              **Other Storage (integriert):** {{ other | round(2) }} kWh  
+              **Summe:** {{ sum | round(2) }} kWh
 
               ---
               **Live**  
-              PV1 {{ p1 | round(0) }} W · PV2 {{ p2 | round(0) }} W · Rest/S2 {{ rest | round(0) }} W  
-              Gesamt {{ live | round(0) }} W
+              PV1 {{ p1 | round(0) }} W · PV2 {{ p2 | round(0) }} W · PV3 {{ p3 | round(0) }} W · PV4 {{ p4 | round(0) }} W  
+              Other Storage {{ other_w | round(0) }} W · Gesamt {{ live | round(0) }} W
           - type: entities
             entities:
               - entity: sensor.gc_0pvp00ed26ut03e9_generation_today
                 name: Generation Today (API)
-              - entity: sensor.gc_0pvp00ed26ut03e9_generation_today_tower1
-                name: Generation Today Speicher 1
-              - entity: sensor.gc_0pvp00ed26ut03e9_generation_today_tower2
-                name: Generation Today Speicher 2
+              - entity: sensor.gc_0pvp00ed26ut03e9_generation_today_storage1
+                name: Generation Today PV1–4
+              - entity: sensor.gc_0pvp00ed26ut03e9_generation_today_other_storage
+                name: Generation Today Other Storage
               - entity: sensor.gc_0pvp00ed26ut03e9_generation_total
                 name: Generation Total
         column_span: 2
@@ -106,15 +108,19 @@ views:
             heading: Solar Panele – Kurven (24 h)
             heading_style: title
           - type: history-graph
-            title: PV1 · PV2 · Speicher 2 · Gesamt
+            title: PV1–4 · Other Storage · Gesamt
             hours_to_show: 24
             entities:
               - entity: sensor.gc_0pvp00ed26ut03e9_pv1_power
                 name: PV1
               - entity: sensor.gc_0pvp00ed26ut03e9_pv2_power
                 name: PV2
-              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_tower2
-                name: Speicher 2
+              - entity: sensor.gc_0pvp00ed26ut03e9_pv3_power
+                name: PV3
+              - entity: sensor.gc_0pvp00ed26ut03e9_pv4_power
+                name: PV4
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_other_storage
+                name: Other Storage
               - entity: sensor.gc_0pvp00ed26ut03e9_solar_power
                 name: Gesamt
         column_span: 4
@@ -137,17 +143,21 @@ views:
               - entity: sensor.gc_0pvp00ed26ut03e9_pv2_power
                 name: PV2
           - type: history-graph
-            title: Speicher 2 (Rest)
+            title: Other Storage
             hours_to_show: 24
             entities:
-              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_tower2
-                name: Speicher 2
+              - entity: sensor.gc_0pvp00ed26ut03e9_solar_power_other_storage
+                name: Other Storage
           - type: history-graph
-            title: PV3 / PV4 (API, oft 0)
+            title: PV3
             hours_to_show: 24
             entities:
               - entity: sensor.gc_0pvp00ed26ut03e9_pv3_power
                 name: PV3
+          - type: history-graph
+            title: PV4
+            hours_to_show: 24
+            entities:
               - entity: sensor.gc_0pvp00ed26ut03e9_pv4_power
                 name: PV4
         column_span: 4
