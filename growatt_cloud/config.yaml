@@ -1,6 +1,6 @@
 # version nur via Release-Workflow setzen (RELEASE.md)
 name: Growatt Cloud
-version: "0.1.27"
+version: "0.1.28"
 slug: growatt_cloud
 description: Daten aus der Growatt Cloud für Noah, Nexa und Wechselrichter (MQTT).
 url: https://github.com/5snowflake5/growatt-cloud
