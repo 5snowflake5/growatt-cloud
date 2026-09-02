@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Growatt Cloud → MQTT für Home Assistant.
-
-Ein Login (API-Token), Open API v4:
-  - Noah und Nexa (deviceType=noah, Auto-Erkennung)
-  - MIN-Wechselrichter (Auto aus Geräteliste)
-
-Keine manuellen Serials nötig.
-"""
+"""Growatt Cloud → MQTT für Home Assistant (Noah, Nexa, Wechselrichter)."""
 
 from __future__ import annotations
 
@@ -26,7 +19,7 @@ from api import (
 from mqtt_ha import HaMqtt
 from sensors import ensure_storage_slots, merge_device_values
 
-# VERBINDLICH: muss config.yaml version entsprechen – nur Release-Workflow ändert beides.
+# VERSION = config.yaml version; nur Release-Workflow ändert beides
 VERSION = "0.1.27"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 SOLAR_SPLIT_ENERGY_PATH = "/data/growatt_solar_split_energy.json"

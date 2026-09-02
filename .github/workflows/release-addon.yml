@@ -1,9 +1,6 @@
 name: Release add-on
 
-# VERBINDLICH – Reihenfolge nicht ändern (siehe RELEASE.md):
-# 1) Image mit neuer Version nach GHCR pushen
-# 2) Erst bei Erfolg version in config.yaml committen
-# → Home Assistant zeigt „Update“ erst, wenn der Pull klappt.
+# Image zuerst, Versionsbump danach – siehe RELEASE.md
 
 on:
   workflow_dispatch:
@@ -76,6 +73,13 @@ jobs:
           tags: |
             ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
             ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:latest
+
+      - name: GHCR-Package public setzen (HA braucht anonymen Pull)
+        run: |
+          gh api --method PATCH "user/packages/container/growatt-cloud%2F${{ matrix.arch }}" \
+            -f visibility=public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-version:
     needs: build
