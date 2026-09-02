@@ -1,6 +1,6 @@
 name: Version guard
 
-# VERBINDLICH – siehe RELEASE.md
+# Version-Regel: RELEASE.md
 # config.yaml/version und growatt_cloud.py/VERSION dürfen nur im Release-Workflow steigen.
 
 on:
