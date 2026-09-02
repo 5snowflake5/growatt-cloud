@@ -7,7 +7,8 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 ## [0.1.28] – 2026-09-02
 
 ### Fixed
-- GHCR-Images werden beim Release **public** gesetzt – HA kann wieder pullen.
+- Release-Workflow blockiert nicht mehr an fehlgeschlagenem GHCR-API-Schritt (GitHub hat keine Visibility-API).
+- HA-Update wieder möglich, sobald GHCR-Packages einmalig **public** sind (siehe RELEASE.md).
 
 ### Changed
 - Add-on-Beschreibung gekürzt (kein Marketing-Text mehr).

@@ -22,8 +22,20 @@ Home Assistant liest `growatt_cloud/config.yaml` → `version`. Erscheint die Ve
 - Skript: `scripts/check-release-version.sh` (lokal und in CI)
 - Cursor: `.cursor/rules/release-version.mdc`
 
+## Einmalig: GHCR-Images public
+
+Home Assistant kann **keine privaten** GHCR-Images pullen. GitHub bietet dafür **keine** API – einmal pro Architektur in der Web-UI:
+
+1. [growatt-cloud/amd64 → Package settings](https://github.com/users/5snowflake5/packages/container/growatt-cloud%2Famd64/settings) → Danger Zone → **Change visibility** → **Public**
+2. [growatt-cloud/aarch64 → Package settings](https://github.com/users/5snowflake5/packages/container/growatt-cloud%2Faarch64/settings) → **Public**
+
+Neue Version-Tags nutzen dieselbe Sichtbarkeit – nicht bei jedem Release wiederholen.
+
+Der Release-Workflow warnt, falls der anonyme Pull noch fehlschlägt (HTTP ≠ 200).
+
 ## HA-Update (Reihenfolge)
 
-1. Warten bis Release-Workflow grün
-2. Einstellungen → Apps → Repository aktualisieren
-3. Growatt Cloud → Aktualisieren
+1. GHCR public (siehe oben), falls Update bisher mit Pull-Fehler scheitert
+2. Warten bis Release-Workflow grün
+3. Einstellungen → Apps → Repository aktualisieren
+4. Growatt Cloud → Aktualisieren

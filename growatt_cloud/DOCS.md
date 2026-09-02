@@ -10,9 +10,7 @@ Kurz: Code pushen → Actions **Release add-on** → erst danach HA updaten. CI 
 
 ## Warum
 
-`noah-mqtt` + HA **Growatt Server** = zwei Logins / viele Requests → Account-Sperre.
-
-Diese App: **ein Open-API-Token**, offizielle **v4**-Endpunkte, MQTT → Home Assistant.
+Ein Growatt-Login statt paralleler MQTT-/Server-Integrationen (weniger Sperr-Risiko).
 
 ## Noah und Nexa
 

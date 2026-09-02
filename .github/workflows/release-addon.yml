@@ -74,12 +74,22 @@ jobs:
             ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
             ghcr.io/5snowflake5/growatt-cloud/${{ matrix.arch }}:latest
 
-      - name: GHCR-Package public setzen (HA braucht anonymen Pull)
+      - name: Prüfen ob Image anonym pullbar ist (HA braucht public GHCR)
+        continue-on-error: true
         run: |
-          gh api --method PATCH "user/packages/container/growatt-cloud%2F${{ matrix.arch }}" \
-            -f visibility=public
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG="${{ steps.ver.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          URL="https://ghcr.io/v2/5snowflake5/growatt-cloud/${ARCH}/manifests/${TAG}"
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+            "$URL")
+          if [[ "$CODE" == "200" ]]; then
+            echo "OK: ghcr.io/.../${ARCH}:${TAG} ist public pullbar."
+          else
+            echo "::warning::GHCR growatt-cloud/${ARCH} ist noch private (HTTP ${CODE})."
+            echo "Einmalig: Package settings → Change visibility → Public"
+            echo "https://github.com/users/5snowflake5/packages/container/growatt-cloud%2F${ARCH}/settings"
+          fi
 
   publish-version:
     needs: build
