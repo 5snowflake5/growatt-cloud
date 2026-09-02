@@ -100,7 +100,9 @@ jobs:
           sed -i "s/^version: \".*\"/version: \"$V\"/" growatt_cloud/config.yaml
           sed -i "s/^VERSION = \".*\"/VERSION = \"$V\"/" growatt_cloud/growatt_cloud.py
           TODAY=$(date -u +%Y-%m-%d)
-          if [[ -n "${NOTE// }" ]]; then
+          if grep -q "^## \\[$V\\]" growatt_cloud/CHANGELOG.md; then
+            echo "CHANGELOG enthält bereits [$V] – kein neuer Eintrag."
+          elif [[ -n "${NOTE// }" ]]; then
             {
               echo "## [$V] – $TODAY"
               echo ""
