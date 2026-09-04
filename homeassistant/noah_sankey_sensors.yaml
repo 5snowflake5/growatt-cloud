@@ -1,0 +1,105 @@
+# Minimal fürs Sankey – nach /config/packages/noah_sankey.yaml kopieren
+# In configuration.yaml:
+#   homeassistant:
+#     packages: !include_dir_named packages
+# Dann: Entwicklerwerkzeuge → YAML prüfen → Neu laden
+
+input_number:
+  noah_s0_wh:
+    name: Batterie um Mitternacht (SoC₀ Wh)
+    min: 0
+    max: 20000
+    step: 1
+    mode: box
+    unit_of_measurement: Wh
+    initial: 0
+    icon: mdi:battery-clock
+
+template:
+  - sensor:
+      - name: "Noah in die Batterie heute"
+        unique_id: noah_in_die_batterie_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+        state: >-
+          {% set s1 = states('sensor.gc_0pvp00ed26ut03e9_soc') | float(0) / 100 * 4096 %}
+          {% set s0 = states('input_number.noah_s0_wh') | float(s1) %}
+          {% set d = (s1 - s0) / 1000 %}
+          {{ (d if d > 0 else 0) | round(3) }}
+
+      - name: "Noah aus der Batterie heute"
+        unique_id: noah_aus_der_batterie_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+        state: >-
+          {% set s1 = states('sensor.gc_0pvp00ed26ut03e9_soc') | float(0) / 100 * 4096 %}
+          {% set s0 = states('input_number.noah_s0_wh') | float(s1) %}
+          {% set d = (s0 - s1) / 1000 %}
+          {{ (d if d > 0 else 0) | round(3) }}
+
+      - name: "Noah Verlust Batterie heute"
+        unique_id: noah_verlust_batterie_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+        state: >-
+          {% set s1 = states('sensor.gc_0pvp00ed26ut03e9_soc') | float(0) / 100 * 4096 %}
+          {% set s0 = states('input_number.noah_s0_wh') | float(s1) %}
+          {% set solar = states('sensor.gc_0pvp00ed26ut03e9_generation_today') | float(0) * 1000 %}
+          {% set zum_wr = (states('sensor.gc_bzp4nxx18c_energy_today_input_1') | float(0)
+                         + states('sensor.gc_bzp4nxx18c_energy_today_input_2') | float(0)) * 1000 %}
+          {{ (((s0 + solar - zum_wr) - s1) / 1000) | round(3) }}
+
+      - name: "Noah Solar zum WR heute"
+        unique_id: noah_solar_zum_wr_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+        state: >-
+          {% set solar = states('sensor.gc_0pvp00ed26ut03e9_generation_today') | float(0) %}
+          {% set rein = states('sensor.noah_in_die_batterie_heute') | float(0) %}
+          {% set verl = states('sensor.noah_verlust_batterie_heute') | float(0) %}
+          {{ (solar - rein - verl) | round(3) }}
+
+      - name: "Noah zum Wechselrichter heute"
+        unique_id: noah_zum_wr_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        state: >-
+          {{ (states('sensor.gc_bzp4nxx18c_energy_today_input_1') | float(0)
+             + states('sensor.gc_bzp4nxx18c_energy_today_input_2') | float(0)) | round(3) }}
+
+      - name: "Noah Verlust Wechselrichter heute"
+        unique_id: noah_verlust_wr_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+        state: >-
+          {% set y = states('sensor.noah_zum_wechselrichter_heute') | float(0) %}
+          {% set b = states('sensor.gc_bzp4nxx18c_energy_today') | float(0) %}
+          {{ (y - b) | round(3) }}
+
+      - name: "Noah vom Balkon genutzt heute"
+        unique_id: noah_vom_balkon_genutzt_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+        state: >-
+          {% set balkon = states('sensor.gc_bzp4nxx18c_energy_today') | float(0) %}
+          {% set ei = states('sensor.ecotracker_einspeisung_heute') | float(0) / 1000 %}
+          {% set g = balkon - ei %}
+          {{ (g if g > 0 else 0) | round(3) }}
+
+      - name: "Noah Gesamtstrombedarf heute"
+        unique_id: noah_gesamtstrombedarf_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: measurement
+        state: >-
+          {% set netz = states('sensor.ecotracker_netzbezug_heute') | float(0) / 1000 %}
+          {% set ei = states('sensor.ecotracker_einspeisung_heute') | float(0) / 1000 %}
+          {% set balkon = states('sensor.gc_bzp4nxx18c_energy_today') | float(0) %}
+          {{ (netz + balkon - ei) | round(3) }}

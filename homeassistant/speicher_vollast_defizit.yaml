@@ -1,0 +1,164 @@
+# Speicher volle Last + EcoTracker-Mehrbedarf (Minuten/Tag)
+#
+# Zählt Minuten, in denen:
+#   Speicher-Abgabe ≥ Schwelle (volle Last)
+#   UND EcoTracker noch Netzbezug zeigt (> 0 W)
+#
+# Bänder (Mehrbedarf = EcoTracker-Leistung in dem Moment):
+#   0–250 W | 250–500 W | 500–800 W | ≥ 800 W
+#
+# Einrichtung:
+# 1) Datei nach /config/packages/speicher_vollast_defizit.yaml
+# 2) configuration.yaml → homeassistant.packages: !include_dir_named packages
+# 3) Schwelle anpassen (input_number.speicher_voll_last_w):
+#      1× Noah ~800 W → 750
+#      Noah + Nexa     → Summe der Max-Abgaben, z. B. 1500–2300
+# 4) HA neu starten (History Stats brauchen ein paar State-Wechsel)
+# 5) Serials / EcoTracker-Entity prüfen
+
+input_number:
+  speicher_voll_last_w:
+    name: Speicher volle Last Schwelle
+    min: 100
+    max: 5000
+    step: 50
+    mode: box
+    unit_of_measurement: W
+    initial: 750
+    icon: mdi:transmission-tower
+
+template:
+  - sensor:
+      - name: "Speicher Abgabe Summe"
+        unique_id: speicher_abgabe_summe_w
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        icon: mdi:export
+        # Nur Noah: Nexa-Zeile entfernen. Beide: so lassen.
+        state: >-
+          {{ (
+            states('sensor.gc_0pvp00ed26ut03e9_output_power') | float(0)
+            + states('sensor.gc_0hvrd0zr247t000v_output_power') | float(0)
+          ) | round(0) }}
+
+      - name: "Speicher Vollast Mehrbedarf"
+        unique_id: speicher_vollast_mehrbedarf_w
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        icon: mdi:flash-alert
+        attributes:
+          speicher_w: "{{ states('sensor.speicher_abgabe_summe') | float(0) }}"
+          ecotracker_w: "{{ states('sensor.ecotracker_power') | float(0) }}"
+        state: >-
+          {% set voll = is_state('binary_sensor.speicher_bei_voller_last', 'on') %}
+          {% set bezug = states('sensor.ecotracker_power') | float(0) %}
+          {{ (bezug if voll and bezug > 0 else 0) | round(0) }}
+
+      - name: "Vollast Defizit 0-250 min heute"
+        unique_id: vollast_defizit_0_250_min
+        unit_of_measurement: "min"
+        icon: mdi:timer-outline
+        state: "{{ ((states('sensor.vollast_defizit_0_250_heute_h') | float(0)) * 60) | round(0) }}"
+
+      - name: "Vollast Defizit 250-500 min heute"
+        unique_id: vollast_defizit_250_500_min
+        unit_of_measurement: "min"
+        icon: mdi:timer-outline
+        state: "{{ ((states('sensor.vollast_defizit_250_500_heute_h') | float(0)) * 60) | round(0) }}"
+
+      - name: "Vollast Defizit 500-800 min heute"
+        unique_id: vollast_defizit_500_800_min
+        unit_of_measurement: "min"
+        icon: mdi:timer-outline
+        state: "{{ ((states('sensor.vollast_defizit_500_800_heute_h') | float(0)) * 60) | round(0) }}"
+
+      - name: "Vollast Defizit ueber 800 min heute"
+        unique_id: vollast_defizit_ueber_800_min
+        unit_of_measurement: "min"
+        icon: mdi:timer-outline
+        state: "{{ ((states('sensor.vollast_defizit_ueber_800_heute_h') | float(0)) * 60) | round(0) }}"
+
+      - name: "Vollast mit Mehrbedarf min heute"
+        unique_id: vollast_mit_mehrbedarf_min
+        unit_of_measurement: "min"
+        icon: mdi:timer
+        state: >-
+          {% set a = states('sensor.vollast_defizit_0_250_min_heute') | float(0) %}
+          {% set b = states('sensor.vollast_defizit_250_500_min_heute') | float(0) %}
+          {% set c = states('sensor.vollast_defizit_500_800_min_heute') | float(0) %}
+          {% set d = states('sensor.vollast_defizit_ueber_800_min_heute') | float(0) %}
+          {{ (a + b + c + d) | round(0) }}
+
+  - binary_sensor:
+      - name: "Speicher bei voller Last"
+        unique_id: speicher_bei_voller_last
+        icon: mdi:battery-high
+        state: >-
+          {{ states('sensor.speicher_abgabe_summe') | float(0)
+             >= states('input_number.speicher_voll_last_w') | float(750) }}
+
+      - name: "Vollast Defizit 0-250W"
+        unique_id: vollast_defizit_0_250
+        icon: mdi:gauge-low
+        state: >-
+          {% set d = states('sensor.speicher_vollast_mehrbedarf') | float(0) %}
+          {{ d > 0 and d < 250 }}
+
+      - name: "Vollast Defizit 250-500W"
+        unique_id: vollast_defizit_250_500
+        icon: mdi:gauge
+        state: >-
+          {% set d = states('sensor.speicher_vollast_mehrbedarf') | float(0) %}
+          {{ d >= 250 and d < 500 }}
+
+      - name: "Vollast Defizit 500-800W"
+        unique_id: vollast_defizit_500_800
+        icon: mdi:gauge
+        state: >-
+          {% set d = states('sensor.speicher_vollast_mehrbedarf') | float(0) %}
+          {{ d >= 500 and d < 800 }}
+
+      - name: "Vollast Defizit ueber 800W"
+        unique_id: vollast_defizit_ueber_800
+        icon: mdi:gauge-full
+        state: >-
+          {{ states('sensor.speicher_vollast_mehrbedarf') | float(0) >= 800 }}
+
+sensor:
+  - platform: history_stats
+    name: "Vollast Defizit 0-250 heute h"
+    unique_id: vollast_defizit_0_250_heute_h
+    entity_id: binary_sensor.vollast_defizit_0_250w
+    state: "on"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: "Vollast Defizit 250-500 heute h"
+    unique_id: vollast_defizit_250_500_heute_h
+    entity_id: binary_sensor.vollast_defizit_250_500w
+    state: "on"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: "Vollast Defizit 500-800 heute h"
+    unique_id: vollast_defizit_500_800_heute_h
+    entity_id: binary_sensor.vollast_defizit_500_800w
+    state: "on"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
+
+  - platform: history_stats
+    name: "Vollast Defizit ueber 800 heute h"
+    unique_id: vollast_defizit_ueber_800_heute_h
+    entity_id: binary_sensor.vollast_defizit_ueber_800w
+    state: "on"
+    type: time
+    start: "{{ now().replace(hour=0, minute=0, second=0, microsecond=0) }}"
+    end: "{{ now() }}"
