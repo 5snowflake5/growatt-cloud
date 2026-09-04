@@ -281,4 +281,29 @@ views:
                 name: Import
               - entity: sensor.ecotracker_total_grid_export
                 name: Export
-        column_span: 4
+        column_span: 2
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Volle Last + Mehrbedarf (heute)
+            heading_style: title
+          - type: entities
+            entities:
+              - entity: input_number.speicher_voll_last_w
+                name: Schwelle volle Last
+              - entity: sensor.speicher_abgabe_summe
+                name: Abgabe Noah+Nexa
+              - entity: sensor.speicher_vollast_mehrbedarf
+                name: Mehrbedarf jetzt
+              - entity: sensor.vollast_mit_mehrbedarf_min_heute
+                name: Summe Minuten
+              - entity: sensor.vollast_defizit_0_250_min_heute
+                name: 0–250 W
+              - entity: sensor.vollast_defizit_250_500_min_heute
+                name: 250–500 W
+              - entity: sensor.vollast_defizit_500_800_min_heute
+                name: 500–800 W
+              - entity: sensor.vollast_defizit_ueber_800_min_heute
+                name: ≥ 800 W
+        column_span: 2
