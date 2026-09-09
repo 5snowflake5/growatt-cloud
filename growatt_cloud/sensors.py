@@ -39,6 +39,41 @@ def _camel_to_snake(name: str) -> str:
     return text.replace("-", "_").lower()
 
 
+def integrate_daily_wh(
+    state: dict[str, Any] | None,
+    *,
+    day: str,
+    now: float,
+    powers_w: dict[str, float],
+    max_dt_h: float = 2.0,
+) -> dict[str, Any]:
+    """Accumulate live watts into Wh for the local calendar day.
+
+    Resets when ``day`` changes. The first sample of a day (or after a gap
+    larger than ``max_dt_h`` hours) does not add energy.
+    """
+    prev = state if isinstance(state, dict) else {}
+    if prev.get("day") != day:
+        out: dict[str, Any] = {"day": day, "ts": now}
+        for key in powers_w:
+            out[key] = 0.0
+        return out
+
+    out = dict(prev)
+    ts_raw = out.get("ts")
+    last = float(ts_raw) if ts_raw is not None else now
+    dt_h = max(0.0, min((now - last) / 3600.0, max_dt_h))
+    if dt_h > 0:
+        for key, watts in powers_w.items():
+            out[key] = float(out.get(key) or 0.0) + float(watts or 0.0) * dt_h
+    else:
+        for key in powers_w:
+            out.setdefault(key, float(out.get(key) or 0.0))
+    out["ts"] = now
+    out["day"] = day
+    return out
+
+
 def _num(data: dict[str, Any], *keys: str, default: float | None = 0.0) -> float | None:
     for key in keys:
         if key in data and data[key] not in (None, ""):
@@ -262,6 +297,44 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
         "generation_total": _num(raw, "eacTotal", "eac_total"),
         "generation_month": _num(raw, "eacMonth", "eac_month"),
         "generation_year": _num(raw, "eacYear", "eac_year"),
+        # Noah/Nexa queryLastData has no daily output kWh. These aliases are
+        # MIN/SPH/hybrid fields — used when a firmware actually sends them.
+        "output_today": _num(
+            raw,
+            "eOutToday",
+            "eOutputToday",
+            "outputToday",
+            "e_out_today",
+            default=None,
+        ),
+        "discharge_today": _num(
+            raw,
+            "eDischargeToday",
+            "edischargeToday",
+            "e_discharge_today",
+            default=None,
+        ),
+        "charge_today": _num(
+            raw,
+            "eChargeToday",
+            "echargeToday",
+            "e_charge_today",
+            default=None,
+        ),
+        "energy_to_user_today": _num(
+            raw,
+            "eToUserToday",
+            "etoUserToday",
+            "e_to_user_today",
+            default=None,
+        ),
+        "energy_to_user_total": _num(
+            raw,
+            "eToUserTotal",
+            "etoUserTotal",
+            "e_to_user_total",
+            default=None,
+        ),
         "battery_num": packs,
         "system_temp": _num(raw, "systemTemp", "system_temp"),
         "ct_power": _num(raw, "ctSelfPower", "ct_self_power"),
@@ -807,6 +880,14 @@ def _drop_alias_dupes(out: dict[str, Any], kind: str) -> None:
                 "eac_total": "generation_total",
                 "eac_month": "generation_month",
                 "eac_year": "generation_year",
+                "edischarge_today": "discharge_today",
+                "e_discharge_today": "discharge_today",
+                "echarge_today": "charge_today",
+                "e_charge_today": "charge_today",
+                "eto_user_today": "energy_to_user_today",
+                "e_to_user_today": "energy_to_user_today",
+                "eto_user_total": "energy_to_user_total",
+                "e_to_user_total": "energy_to_user_total",
                 "ct_self_power": "ct_power",
                 "total_household_load": "household_load",
                 "ppv": "solar_power",
@@ -940,7 +1021,15 @@ def filter_published_values(
                 out[key] = values[key]
             elif key not in out:
                 out[key] = 0.0
-        for key in ("generation_today_storage1", "generation_today_other_storage"):
+        for key in (
+            "generation_today_storage1",
+            "generation_today_other_storage",
+            "output_today",
+            "discharge_today",
+            "charge_today",
+            "energy_to_user_today",
+            "energy_to_user_total",
+        ):
             if key in values and values[key] is not None:
                 out[key] = values[key]
         packs = int(values.get("battery_num") or out.get("battery_num") or 1)
@@ -961,6 +1050,11 @@ _CURATED_KEEP_STORAGE = {
     "generation_total",
     "generation_month",
     "generation_year",
+    "output_today",
+    "discharge_today",
+    "charge_today",
+    "energy_to_user_today",
+    "energy_to_user_total",
     "battery_num",
     "system_temp",
     "ct_power",

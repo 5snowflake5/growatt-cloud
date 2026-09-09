@@ -4,14 +4,19 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- Noah/Nexa: Sensor **Output Today** (`output_today`, kWh). Growatt `queryLastData` hat für Noah/Nexa kein `edischargeToday` / `etoUserToday` – nur Live-`pac` (W) und PV-`eacToday`. Tages-Abgabe wird deshalb lokal aus `output_power` integriert (wie der PV-Split).
+- Falls die API später `eDischargeToday` / `eToUserToday` / `eChargeToday` doch liefert, werden sie als `discharge_today` / `energy_to_user_today` / `charge_today` veröffentlicht.
+
+### Fixed
+- HA-Gerätename: `2T`/`3T` aus Growatt-Model/Alias entfernt (z. B. „Nexa 3T …“ → „Nexa 0HVR…“).
+
 ## [0.1.29] – 2026-09-02
 
 ### Changed
 - Gerätename ohne 2T/3T-Suffix (z. B. Nexa statt Nexa 3T).
-## [Unreleased]
-
-### Fixed
-- HA-Gerätename: `2T`/`3T` aus Growatt-Model/Alias entfernt (z. B. „Nexa 3T …“ → „Nexa 0HVR…“).
 
 ## [0.1.28] – 2026-09-02
 

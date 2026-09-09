@@ -54,6 +54,7 @@ Falls in HA trotzdem Alt-Entities bleiben: Gerät einmal löschen
 - **`solar_power_storage1`** = PV1 + PV2 + PV3 + PV4 (Summe der String-Messungen am Master).
 - **`solar_power_other_storage`** = `Solar Power − PV1–4` – Solar von weiteren Speichern/Türmen **ohne** eigene String-Messung am Master (nicht zuordenbar zu Turm 2 vs. 3).
 - **`generation_today_storage1` / `generation_today_other_storage`**: Tages-kWh per Integration der Live-Leistung.
+- **`output_today`**: Tages-kWh der Abgabe (Live-`pac` / Output Power). Die Open API liefert für Noah/Nexa **kein** `edischargeToday` oder `etoUserToday` – das sind MIN/SPH-Hybrid-Felder. `eacToday` ist nur PV-Erzeugung (`generation_today`).
 
 Ein **zweites Cloud-Gerät** (eigene Serial, z. B. zweiter Nexa) hat **eigene** PV1–4 und `generation_today` – das ist ein separater Speicher, kein „Other Storage“ am Master.
 

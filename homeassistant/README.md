@@ -21,7 +21,7 @@ Schwelle: `input_number.speicher_voll_last_w` (z. B. 750 bei einem Noah ~800 W).
 | **In die Batterie** | max(0, jetzt − SoC₀) |
 | **Aus der Batterie** | max(0, SoC₀ − jetzt) |
 | Verlust Batterie | (SoC₀ + Solar − Zum WR) − jetzt |
-| Zum WR | Input 1 + Input 2 |
+| Zum WR | Input 1 + Input 2 **oder** `output_today` am Noah |
 | Vom Balkon | energy_today |
 | Verlust WR | Zum WR − Vom Balkon |
 | **Gesamtstrombedarf** | Netzbezug + Vom Balkon − Einspeisung |

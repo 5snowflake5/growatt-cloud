@@ -17,7 +17,7 @@ from api import (
     MIN_INTERVAL_OTHER_S,
 )
 from mqtt_ha import HaMqtt
-from sensors import ensure_storage_slots, merge_device_values
+from sensors import ensure_storage_slots, integrate_daily_wh, merge_device_values
 
 # VERSION = config.yaml version; nur Release-Workflow ändert beides
 VERSION = "0.1.29"
@@ -127,6 +127,7 @@ class Bridge:
                             "day": state.get("day"),
                             "strings": float(state.get("strings") or state.get("t1") or 0.0),
                             "other": float(state.get("other") or state.get("t2") or 0.0),
+                            "output": float(state.get("output") or 0.0),
                             "ts": float(state.get("ts") or 0.0),
                         }
                     self._solar_split_wh = migrated
@@ -158,24 +159,28 @@ class Bridge:
                 values.setdefault(f"battery{i}_temp", 0.0)
 
     def _accumulate_solar_split_energy(self, sn: str, values: dict[str, Any]) -> None:
-        """Tages-kWh für PV1–4 (Master) und Other Storage aus Live-Leistung integrieren."""
+        """Tages-kWh aus Live-Leistung integrieren (PV-Split + Output).
+
+        Noah/Nexa ``queryLastData`` liefert ``eacToday`` (PV-Erzeugung), aber
+        kein tägliches Output-kWh. ``output_today`` kommt daher aus ``pac``,
+        sofern die API kein eigenes Feld schickt.
+        """
         now = time.time()
         day = time.strftime("%Y-%m-%d", time.localtime(now))
-        state = self._solar_split_wh.get(sn) or {"day": day, "strings": 0.0, "other": 0.0, "ts": now}
-        if state.get("day") != day:
-            state = {"day": day, "strings": 0.0, "other": 0.0, "ts": now}
-        last = float(state.get("ts") or now)
-        dt_h = max(0.0, min((now - last) / 3600.0, 2.0))
         strings_w = float(values.get("solar_power_storage1") or 0.0)
         other_w = float(values.get("solar_power_other_storage") or 0.0)
-        if last and dt_h > 0:
-            state["strings"] = float(state.get("strings") or 0.0) + strings_w * dt_h
-            state["other"] = float(state.get("other") or 0.0) + other_w * dt_h
-        state["ts"] = now
-        state["day"] = day
+        output_w = float(values.get("output_power") or 0.0)
+        state = integrate_daily_wh(
+            self._solar_split_wh.get(sn),
+            day=day,
+            now=now,
+            powers_w={"strings": strings_w, "other": other_w, "output": output_w},
+        )
         self._solar_split_wh[sn] = state
-        values["generation_today_storage1"] = round(float(state["strings"]) / 1000.0, 3)
-        values["generation_today_other_storage"] = round(float(state["other"]) / 1000.0, 3)
+        values["generation_today_storage1"] = round(float(state.get("strings") or 0.0) / 1000.0, 3)
+        values["generation_today_other_storage"] = round(float(state.get("other") or 0.0) / 1000.0, 3)
+        if values.get("output_today") is None:
+            values["output_today"] = round(float(state.get("output") or 0.0) / 1000.0, 3)
         self._save_solar_split_energy()
 
     def refresh_devices(self, force: bool = False) -> None:
@@ -244,7 +249,8 @@ class Bridge:
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
                     "%s %s SoC=%s%% PV=%.0fW PV1-4=%.0fW Other=%.0fW "
-                    "Out=%.0fW Today=%.2fkWh PV1-4=%.2f Other=%.2fkWh packs=%s bat2=%s%% mode=%s entities=%s",
+                    "Out=%.0fW OutToday=%.2fkWh Today=%.2fkWh PV1-4=%.2f Other=%.2fkWh "
+                    "packs=%s bat2=%s%% mode=%s entities=%s",
                     values["label"],
                     sn,
                     values.get("soc"),
@@ -252,6 +258,7 @@ class Bridge:
                     values.get("solar_power_storage1") or 0,
                     values.get("solar_power_other_storage") or 0,
                     values.get("output_power") or 0,
+                    values.get("output_today") or 0,
                     values.get("generation_today") or 0,
                     values.get("generation_today_storage1") or 0,
                     values.get("generation_today_other_storage") or 0,
