@@ -27,39 +27,55 @@ Beide laufen in der Open API unter `deviceType=noah`. Die App unterscheidet sie 
 
 ## Intervalle (Growatt-Limits)
 
-| Gerät | Minimum |
-|-------|---------|
-| Noah / Nexa | 60 s **pro Gerät** (Noah und Nexa parallel möglich) |
+Die App-Config erlaubt 1–86400 s. Werte **unter** den Growatt-Empfehlungen speichern geht – im Log kommt eine Warnung, Rate-Limit (code 102) ist dann möglich.
+
+| Gerät | Empfehlung |
+|-------|------------|
+| Noah / Nexa | 60 s **pro Gerät** |
 | MIN-WR / andere | 300 s |
 | Geräteliste | stündlich (Default) |
+
+## Zeitzone
+
+Option `timezone` (IANA, z. B. `Europe/Berlin`):
+
+- leer → Zeitzone von Home Assistant (Supervisor)
+- ungültig/nicht erreichbar → UTC
+
+Growatt liefert oft nur einen Offset, keinen IANA-Namen – deshalb nicht als Uhr für Tageswechsel genutzt. `pack_capacity_wh` ist Wh **pro Batterie-Pack** (Noah oft 2048); `battery_energy` = SoC × Packs × dieser Wert.
+
+## MQTT
+
+Wenn User/Pass leer sind, liest die App die Mosquitto-Daten vom Supervisor (`mqtt:need`). Manuell überschreiben geht weiter über `mqtt_host` / `mqtt_user` / `mqtt_password`.
 
 ## Sensor-Modus
 
 Option `sensor_mode`:
 
-- **`useful`** (Default): schlanke Live-Sensoren. Beim MIN-WR u. a. ohne BMS/BDC/EPS-Nullfelder, ohne Einphasen-S/T, ohne Duplikate (Pac/Eac/Epv…).
-- **`full`**: mehr Felder, aber weiterhin bereinigt (kein Balkon-„Wahnsinn“ mit 200 Null-Sensoren).
+- **`useful`** (Default): schlanke Live-Sensoren. Idle-Werte bleiben **0** (kein Löschen von Tages-kWh nachts).
+- **`full`**: mehr Felder, ohne BMS-Geister auf Balkon-WR.
 
-Nach dem Update App **neu starten**. Im Log sollte stehen:
-`HA-Discovery-Purge … Alt-Entities entfernt` und `mode=useful → ~30 Entities`.
+Zusätzlich: `charged_today` / `discharged_today`, `battery_energy`, Netz Import/Export, Gerät **Growatt Plant** (Summe aller Speicher/WR, Entity-IDs ohne persönliche Serial).
 
-Falls in HA trotzdem Alt-Entities bleiben: Gerät einmal löschen
+Nach dem Update App **neu starten**.
+
+Falls in HA Alt-Entities bleiben: Gerät einmal löschen
 (Einstellungen → Geräte → Growatt … → löschen), App neu starten.
 
 ## Stack / Solar-Split (ab 0.1.27)
 
-- **`battery1`–`battery4`**: Batterie-**Packs** im Stack (nicht „Speicher 2“ oder „Turm 3“ – das war irreführend).
+- **`battery1`–`battery4`**: Batterie-**Packs** im Stack.
 - **`battery_num`**: wie viele Packs aktiv gemeldet werden.
-- **PV1–PV4**: alle Solar-**Eingänge** am Master-Gerät (ein Noah/Nexa mit WLAN).
-- **`solar_power_storage1`** = PV1 + PV2 + PV3 + PV4 (Summe der String-Messungen am Master).
-- **`solar_power_other_storage`** = `Solar Power − PV1–4` – Solar von weiteren Speichern/Türmen **ohne** eigene String-Messung am Master (nicht zuordenbar zu Turm 2 vs. 3).
+- **PV1–PV4**: alle Solar-**Eingänge** am Master-Gerät.
+- **`solar_power_storage1`** = PV1 + PV2 + PV3 + PV4.
+- **`solar_power_other_storage`** = `Solar Power − PV1–4`.
 - **`generation_today_storage1` / `generation_today_other_storage`**: Tages-kWh per Integration der Live-Leistung.
 
-Ein **zweites Cloud-Gerät** (eigene Serial, z. B. zweiter Nexa) hat **eigene** PV1–4 und `generation_today` – das ist ein separater Speicher, kein „Other Storage“ am Master.
+Ein **zweites Cloud-Gerät** (eigene Serial) hat **eigene** PV1–4 – das ist ein separater Speicher, kein „Other Storage“ am Master.
 
 ## Geräte
 
-Serials und Typen werden **automatisch** aus der Geräteliste erkannt.
+Serials und Typen werden **automatisch** aus der Geräteliste erkannt. Dashboards sollen `sensor.gc_plant_*` nutzen, nicht fest verdrahtete Serials.
 
 ## Empfohlen nach Sperre
 

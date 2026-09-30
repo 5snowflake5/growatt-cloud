@@ -5,6 +5,8 @@
   "poll_inverter_seconds": 300,
   "poll_devices_seconds": 3600,
   "sensor_mode": "useful",
+  "timezone": "",
+  "pack_capacity_wh": 2048,
   "mqtt_host": "core-mosquitto",
   "mqtt_port": 1883,
   "mqtt_user": "",

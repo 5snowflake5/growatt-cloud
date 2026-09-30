@@ -1,0 +1,202 @@
+# Growatt energy helpers – no device serials in this file.
+#
+# Copy to /config/packages/growatt_energy.yaml
+# configuration.yaml:
+#   homeassistant:
+#     packages: !include_dir_named packages
+#
+# Uses MQTT plant sensors from the add-on (sensor.gc_plant_*).
+# Optional: set input_text.growatt_inverter_id to the lowercase inverter
+# serial (the suffix in sensor.gc_<suffix>_energy_today) for DC-input split.
+#
+# Add-on options: pack_capacity_wh (Wh per battery pack), timezone (empty = HA).
+
+input_number:
+  noah_s0_wh:
+    name: Batterie um Mitternacht (SoC₀ Wh)
+    min: 0
+    max: 40000
+    step: 1
+    mode: box
+    unit_of_measurement: Wh
+    initial: 0
+    icon: mdi:battery-clock
+
+input_text:
+  growatt_inverter_id:
+    name: Wechselrichter-Suffix (optional)
+    min: 0
+    max: 32
+    mode: text
+    icon: mdi:solar-panel
+
+input_boolean:
+  noah_s0_gesetzt_heute:
+    name: Growatt S0 heute gesetzt
+    icon: mdi:check-circle
+
+template:
+  - sensor:
+      - name: "Growatt Batterie Wh"
+        unique_id: growatt_batterie_wh
+        unit_of_measurement: "Wh"
+        device_class: energy
+        state_class: measurement
+        icon: mdi:battery
+        state: "{{ states('sensor.gc_plant_battery_energy') | float(0) | round(0) }}"
+        availability: "{{ states('sensor.gc_plant_battery_energy') | is_number }}"
+
+      - name: "Growatt Solar heute"
+        unique_id: growatt_solar_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        icon: mdi:solar-power
+        state: "{{ states('sensor.gc_plant_generation_today') | float(0) | round(3) }}"
+        availability: "{{ states('sensor.gc_plant_generation_today') | is_number }}"
+
+      - name: "Growatt geladen heute"
+        unique_id: growatt_geladen_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        icon: mdi:battery-arrow-up
+        state: "{{ states('sensor.gc_plant_charged_today') | float(0) | round(3) }}"
+        availability: "{{ states('sensor.gc_plant_charged_today') | is_number }}"
+
+      - name: "Growatt entladen heute"
+        unique_id: growatt_entladen_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        icon: mdi:battery-arrow-down
+        state: "{{ states('sensor.gc_plant_discharged_today') | float(0) | round(3) }}"
+        availability: "{{ states('sensor.gc_plant_discharged_today') | is_number }}"
+
+      - name: "Growatt zum WR heute"
+        unique_id: growatt_zum_wr_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        icon: mdi:transmission-tower-export
+        state: >-
+          {% set wr = states('input_text.growatt_inverter_id') | lower | trim %}
+          {% if wr not in ['', 'unknown', 'unavailable'] %}
+            {% set i1 = states('sensor.gc_' ~ wr ~ '_energy_today_input_1') | float(0) %}
+            {% set i2 = states('sensor.gc_' ~ wr ~ '_energy_today_input_2') | float(0) %}
+            {{ (i1 + i2) | round(3) }}
+          {% else %}
+            {{ states('sensor.gc_plant_energy_today') | float(0) | round(3) }}
+          {% endif %}
+
+      - name: "Growatt WR Abgabe heute"
+        unique_id: growatt_wr_abgabe_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        icon: mdi:home-export-outline
+        state: "{{ states('sensor.gc_plant_energy_today') | float(0) | round(3) }}"
+        availability: "{{ states('sensor.gc_plant_energy_today') | is_number }}"
+
+      - name: "Growatt WR Verlust heute"
+        unique_id: growatt_wr_verlust_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        icon: mdi:flash-alert
+        state: >-
+          {% set y = states('sensor.growatt_zum_wr_heute') | float(0) %}
+          {% set b = states('sensor.growatt_wr_abgabe_heute') | float(0) %}
+          {{ (y - b) | round(3) }}
+
+      - name: "Growatt vom Balkon genutzt heute"
+        unique_id: growatt_vom_balkon_genutzt_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        icon: mdi:home-import-outline
+        state: >-
+          {% set balkon = states('sensor.growatt_wr_abgabe_heute') | float(0) %}
+          {% set ei = states('sensor.ecotracker_einspeisung_heute') | float(0) / 1000 %}
+          {% set g = balkon - ei %}
+          {{ (g if g > 0 else 0) | round(3) }}
+
+      - name: "Growatt Gesamtstrombedarf heute"
+        unique_id: growatt_gesamtstrombedarf_heute
+        unit_of_measurement: "kWh"
+        device_class: energy
+        state_class: total
+        icon: mdi:home-lightning-bolt
+        state: >-
+          {% set netz = states('sensor.ecotracker_netzbezug_heute') | float(0) / 1000 %}
+          {% set ei = states('sensor.ecotracker_einspeisung_heute') | float(0) / 1000 %}
+          {% set balkon = states('sensor.growatt_wr_abgabe_heute') | float(0) %}
+          {{ (netz + balkon - ei) | round(3) }}
+
+      - name: "Growatt Eigenverbrauch"
+        unique_id: growatt_eigenverbrauch_pct
+        unit_of_measurement: "%"
+        icon: mdi:percent
+        state: >-
+          {% set balkon = states('sensor.growatt_wr_abgabe_heute') | float(0) %}
+          {% set genutzt = states('sensor.growatt_vom_balkon_genutzt_heute') | float(0) %}
+          {{ ((genutzt / balkon * 100) if balkon > 0 else 0) | round(1) }}
+
+      - name: "Growatt Autarkie"
+        unique_id: growatt_autarkie_pct
+        unit_of_measurement: "%"
+        icon: mdi:home-battery
+        state: >-
+          {% set genutzt = states('sensor.growatt_vom_balkon_genutzt_heute') | float(0) %}
+          {% set bedarf = states('sensor.growatt_gesamtstrombedarf_heute') | float(0) %}
+          {{ ((genutzt / bedarf * 100) if bedarf > 0 else 0) | round(1) }}
+
+      - name: "Growatt S2 theoretisch Wh"
+        unique_id: growatt_s2_theoretisch_wh
+        unit_of_measurement: "Wh"
+        device_class: energy
+        state_class: measurement
+        icon: mdi:battery-sync
+        state: >-
+          {% set s0 = states('input_number.noah_s0_wh') | float(0) %}
+          {% set x = states('sensor.growatt_solar_heute') | float(0) * 1000 %}
+          {% set y = states('sensor.growatt_zum_wr_heute') | float(0) * 1000 %}
+          {{ (s0 + x - y) | round(0) }}
+
+      - name: "Growatt Bilanzlücke Z Wh"
+        unique_id: growatt_bilanzluecke_z_wh
+        unit_of_measurement: "Wh"
+        device_class: energy
+        state_class: measurement
+        icon: mdi:flash-alert
+        state: >-
+          {% set s2 = states('sensor.growatt_s2_theoretisch_wh') | float(0) %}
+          {% set s1 = states('sensor.gc_plant_battery_energy') | float(0) %}
+          {{ (s2 - s1) | round(0) }}
+
+automation:
+  - id: growatt_s0_mitternacht
+    alias: Growatt S0 um Mitternacht setzen
+    mode: single
+    trigger:
+      - platform: time
+        at: "00:00:00"
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.noah_s0_wh
+        data:
+          value: "{{ states('sensor.gc_plant_battery_energy') | float(0) }}"
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.noah_s0_gesetzt_heute
+
+  - id: growatt_s0_reset_mitternacht
+    alias: Growatt S0 Flag Reset Mitternacht
+    trigger:
+      - platform: time
+        at: "00:00:05"
+    action:
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.noah_s0_gesetzt_heute

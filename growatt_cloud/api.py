@@ -14,9 +14,9 @@ LOG = logging.getLogger("growatt-cloud.api")
 
 DEFAULT_SERVER = "https://openapi.growatt.com"
 
-# Offizielle Limits (Showdoc / growatt-public-api):
-# Noah/Nexa energy (queryLastData): 1/min account-weit
-# andere Geräte energy: 1/5min account-weit
+# Offizielle Limits (Showdoc / growatt-public-api) – Empfehlung, nicht hart erzwungen:
+# Noah/Nexa energy (queryLastData): 1/min je Gerät
+# andere Geräte energy: 1/5min je Gerät
 # Device-Liste: 1/5s · DeviceInfo: ~5min · WiFi: ~5s
 MIN_INTERVAL_NOAH_S = 60
 MIN_INTERVAL_OTHER_S = 300

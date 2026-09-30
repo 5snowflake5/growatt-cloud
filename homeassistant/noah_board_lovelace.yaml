@@ -1,8 +1,8 @@
-# Energie-Dashboard – Tabelle + Sankey
-# Nur Sensoren aus der Tabellen-Rechnung (keine noah_*-Hilfssensoren).
+# Energie-Dashboard – Tabelle + Sankey (plant sensors, no serials)
 #
+# Requires: growatt_energy.yaml package
 # HACS: Sankey Chart Card (MindFreeze)
-# Dashboard → Rohkonfiguration → ab views: pasten.
+# Dashboard → Raw configuration → paste from views:
 
 views:
   - type: sections
@@ -22,43 +22,39 @@ views:
             heading_style: title
           - type: markdown
             content: |
-              {% set cap = 4096 %}
-              {% set soc = states('sensor.gc_example_noah_soc') | float(0) %}
-              {% set speicher_jetzt = soc / 100 * cap %}
+              {% set speicher_jetzt = states('sensor.gc_plant_battery_energy') | float(0) %}
+              {% set soc = states('sensor.gc_plant_soc') | float(0) %}
               {% set soc0 = states('input_number.noah_s0_wh') | float(speicher_jetzt) %}
-              {% set solar = states('sensor.gc_example_noah_generation_today') | float(0) * 1000 %}
-              {% set zum_wr = (states('sensor.gc_example_inverter_energy_today_input_1') | float(0)
-                             + states('sensor.gc_example_inverter_energy_today_input_2') | float(0)) * 1000 %}
-              {% set balkon = states('sensor.gc_example_inverter_energy_today') | float(0) * 1000 %}
-              {% set in_bat = (speicher_jetzt - soc0) if (speicher_jetzt - soc0) > 0 else 0 %}
-              {% set aus_bat = (soc0 - speicher_jetzt) if (soc0 - speicher_jetzt) > 0 else 0 %}
-              {% set verlust_bat = (soc0 + solar - zum_wr) - speicher_jetzt %}
-              {% set verlust_wr = zum_wr - balkon %}
-              {% set netz = states('sensor.ecotracker_netzbezug_heute') | float(0) %}
-              {% set einspeisung = states('sensor.ecotracker_einspeisung_heute') | float(0) %}
-              {% set bedarf = netz + balkon - einspeisung %}
-              {% set genutzt = (balkon - einspeisung) if (balkon - einspeisung) > 0 else 0 %}
-              {% set eigen = (genutzt / balkon * 100) if balkon > 0 else 0 %}
-              {% set autark = (genutzt / bedarf * 100) if bedarf > 0 else 0 %}
+              {% set solar = states('sensor.growatt_solar_heute') | float(0) %}
+              {% set geladen = states('sensor.growatt_geladen_heute') | float(0) %}
+              {% set entladen = states('sensor.growatt_entladen_heute') | float(0) %}
+              {% set zum_wr = states('sensor.growatt_zum_wr_heute') | float(0) %}
+              {% set balkon = states('sensor.growatt_wr_abgabe_heute') | float(0) %}
+              {% set verlust_wr = states('sensor.growatt_wr_verlust_heute') | float(0) %}
+              {% set netz = states('sensor.ecotracker_netzbezug_heute') | float(0) / 1000 %}
+              {% set einspeisung = states('sensor.ecotracker_einspeisung_heute') | float(0) / 1000 %}
+              {% set bedarf = states('sensor.growatt_gesamtstrombedarf_heute') | float(0) %}
+              {% set genutzt = states('sensor.growatt_vom_balkon_genutzt_heute') | float(0) %}
+              {% set eigen = states('sensor.growatt_eigenverbrauch') | float(0) %}
+              {% set autark = states('sensor.growatt_autarkie') | float(0) %}
 
-              ## Gesamtstrombedarf: **{{ (bedarf / 1000) | round(2) }} kWh**
+              ## Gesamtstrombedarf: **{{ bedarf | round(2) }} kWh**
 
               | | kWh |
               |---|---:|
-              | Solar erzeugt | {{ (solar / 1000) | round(2) }} |
-              | **In die Batterie** | {{ (in_bat / 1000) | round(2) }} |
-              | **Aus der Batterie** | {{ (aus_bat / 1000) | round(2) }} |
-              | Verlust Batterie | {{ (verlust_bat / 1000) | round(2) }} |
-              | Zum Wechselrichter | {{ (zum_wr / 1000) | round(2) }} |
-              | Vom Balkon ins Haus | {{ (balkon / 1000) | round(2) }} |
-              | Verlust Wechselrichter | {{ (verlust_wr / 1000) | round(2) }} |
-              | Netzbezug | {{ (netz / 1000) | round(2) }} |
-              | Einspeisung | {{ (einspeisung / 1000) | round(2) }} |
+              | Solar erzeugt | {{ solar | round(2) }} |
+              | **In die Batterie** | {{ geladen | round(2) }} |
+              | **Aus der Batterie** | {{ entladen | round(2) }} |
+              | Zum Wechselrichter | {{ zum_wr | round(2) }} |
+              | Vom Balkon ins Haus | {{ balkon | round(2) }} |
+              | Verlust Wechselrichter | {{ verlust_wr | round(2) }} |
+              | Netzbezug | {{ netz | round(2) }} |
+              | Einspeisung | {{ einspeisung | round(2) }} |
 
-              Batterie: {{ soc | round(0) }} % jetzt · Start {{ (soc0 / cap * 100) | round(0) }} % ({{ soc0 | round(0) }} Wh)  
+              Batterie: {{ soc | round(0) }} % jetzt · Start {{ soc0 | round(0) }} Wh  
               Eigenverbrauch {{ eigen | round(0) }} % · Autarkie {{ autark | round(0) }} %
           - type: gauge
-            entity: sensor.gc_example_noah_soc
+            entity: sensor.gc_plant_soc
             name: Batterie jetzt
             min: 0
             max: 100
@@ -71,6 +67,8 @@ views:
             entities:
               - entity: input_number.noah_s0_wh
                 name: Batterie um Mitternacht (Wh) = SoC₀
+              - entity: input_text.growatt_inverter_id
+                name: WR-Suffix (optional)
               - entity: sensor.ecotracker_netzbezug_heute
                 name: Netzbezug heute
               - entity: sensor.ecotracker_einspeisung_heute
@@ -91,25 +89,17 @@ views:
             round: 2
             height: 480
             nodes:
-              # --- Quellen ---
               - id: solar
-                entity_id: sensor.gc_example_noah_generation_today
+                entity_id: sensor.growatt_solar_heute
                 section: 0
                 name: Solar
                 color: "#F9A825"
 
-              # Aus = max(0, SoC₀ − Speicher jetzt) = SoC₀ + (− Speicher jetzt)
               - id: aus_bat
-                entity_id: sensor.gc_example_noah_soc
+                entity_id: sensor.growatt_entladen_heute
                 section: 0
                 name: Aus der Batterie
                 color: "#8D6E63"
-                unit_of_measurement: kWh
-                filters:
-                  - multiply: 0.04096
-                  - multiply: -1
-                add_entities:
-                  - input_number.noah_s0_wh
 
               - id: netz
                 entity_id: sensor.ecotracker_netzbezug_heute
@@ -118,53 +108,20 @@ views:
                 color: "#42A5F5"
                 unit_of_measurement: Wh
 
-              # --- Solar-Aufteilung / Batterie ---
-              # In = max(0, Speicher jetzt − SoC₀)
               - id: in_bat
-                entity_id: sensor.gc_example_noah_soc
+                entity_id: sensor.growatt_geladen_heute
                 section: 1
                 name: In die Batterie
                 color: "#66BB6A"
-                unit_of_measurement: kWh
-                filters:
-                  - multiply: 0.04096
-                subtract_entities:
-                  - input_number.noah_s0_wh
 
-              # Verlust Batterie = SoC₀ + Solar − Zum WR − Speicher jetzt
-              - id: verlust_bat
-                entity_id: sensor.gc_example_noah_soc
-                section: 1
-                name: Verlust Batterie
-                color: "#A1887F"
-                unit_of_measurement: kWh
-                filters:
-                  - multiply: 0.04096
-                  - multiply: -1
-                add_entities:
-                  - input_number.noah_s0_wh
-                  - sensor.gc_example_noah_generation_today
-                subtract_entities:
-                  - sensor.gc_example_inverter_energy_today_input_1
-                  - sensor.gc_example_inverter_energy_today_input_2
-
-              - id: solar_zu_wr
-                type: remaining_parent_state
-                section: 1
-                name: Solar zum WR
-                color: "#FFCA28"
-
-              # --- WR ---
               - id: zum_wr
-                entity_id: sensor.gc_example_inverter_energy_today_input_1
-                add_entities:
-                  - sensor.gc_example_inverter_energy_today_input_2
+                entity_id: sensor.growatt_zum_wr_heute
                 section: 2
                 name: Zum Wechselrichter
                 color: "#29B6F6"
 
               - id: balkon
-                entity_id: sensor.gc_example_inverter_energy_today
+                entity_id: sensor.growatt_wr_abgabe_heute
                 section: 3
                 name: Vom Balkon ins Haus
                 color: "#FF7043"
@@ -175,7 +132,6 @@ views:
                 name: Verlust Wechselrichter
                 color: "#78909C"
 
-              # --- Haus ---
               - id: einspeisung
                 entity_id: sensor.ecotracker_einspeisung_heute
                 section: 4
@@ -199,10 +155,6 @@ views:
               - source: solar
                 target: in_bat
               - source: solar
-                target: verlust_bat
-              - source: solar
-                target: solar_zu_wr
-              - source: solar_zu_wr
                 target: zum_wr
               - source: aus_bat
                 target: zum_wr
@@ -226,19 +178,19 @@ views:
             heading: Live
             heading_style: title
           - type: entity
-            entity: sensor.gc_example_noah_solar_power
+            entity: sensor.gc_plant_solar_power
             name: Solar
           - type: entity
-            entity: sensor.gc_example_noah_charging_power
+            entity: sensor.gc_plant_charging_power
             name: Laden
           - type: entity
-            entity: sensor.gc_example_noah_discharge_power
+            entity: sensor.gc_plant_discharge_power
             name: Entladen
           - type: entity
-            entity: sensor.gc_example_noah_output_power
-            name: Abgabe Noah
+            entity: sensor.gc_plant_output_power
+            name: Abgabe
           - type: entity
-            entity: sensor.gc_example_inverter_ac_power
+            entity: sensor.gc_plant_ac_power
             name: WR Ausgang
           - type: entity
             entity: sensor.ecotracker_power
@@ -251,14 +203,14 @@ views:
             heading: Monat (30 Tage)
             heading_style: title
           - type: statistics-graph
-            title: Solar Noah
+            title: Solar
             chart_type: bar
             period: day
             days_to_show: 30
             stat_types:
               - change
             entities:
-              - entity: sensor.gc_example_noah_generation_total
+              - entity: sensor.gc_plant_generation_total
                 name: Solar
           - type: statistics-graph
             title: Vom Balkon (WR)
@@ -268,12 +220,8 @@ views:
             stat_types:
               - change
             entities:
-              - entity: sensor.gc_example_inverter_energy_total
+              - entity: sensor.gc_plant_energy_total
                 name: WR→Haus
-              - entity: sensor.gc_example_inverter_energy_total_input_1
-                name: Input 1
-              - entity: sensor.gc_example_inverter_energy_total_input_2
-                name: Input 2
           - type: statistics-graph
             title: Netz (EcoTracker)
             chart_type: bar

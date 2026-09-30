@@ -1,27 +1,35 @@
-# Home Assistant – Growatt / NOAH
+# Home Assistant – Growatt Cloud
 
-## Einrichtung kurz
+## Einrichtung
 
-1. `noah_bilanz_package.yaml` nach `/config/packages/`  
-2. `packages: !include_dir_named packages` in `configuration.yaml`  
-3. `input_number.noah_s0_wh` um **00:00** auf `SoC% × 4096` setzen  
-4. `noah_board_lovelace.yaml` ins Dashboard pasten  
+1. `growatt_energy.yaml` nach `/config/packages/` kopieren  
+2. Optional `speicher_vollast_defizit.yaml` ebenfalls nach packages  
+3. In `configuration.yaml`: `homeassistant.packages: !include_dir_named packages`  
+4. Neu starten  
+5. Optional: Helfer **Wechselrichter-Suffix** auf den Kleinbuchstaben-Serial des MIN-WR setzen (steht in der Entity-ID `sensor.gc_<suffix>_energy_today`)  
+6. `noah_board_lovelace.yaml` oder `lovelace_view.yaml` ins Dashboard pasten  
 
-### Volle Last + EcoTracker-Mehrbedarf
+S0 (Batterie-Wh um Mitternacht) setzt die Automation um 00:00 aus `sensor.gc_plant_battery_energy`.
 
-`speicher_vollast_defizit.yaml` → packages: zählt **Minuten/Tag**, wenn Speicher ≥ Schwelle abgibt und EcoTracker trotzdem noch Bezug zeigt (`0–250` / `250–500` / `500–800` / `≥800` W).
+Kapazität kommt aus der Add-on-Option `pack_capacity_wh` × Anzahl Packs, nicht aus einer festen 4096-Wh-Konstante.
 
-Schwelle: `input_number.speicher_voll_last_w` (z. B. 750 bei einem Noah ~800 W).  
+## Plant-Sensoren (ohne Serial)
 
-## Rechnung (aus SoC jetzt + SoC₀)
+Das Add-on veröffentlicht ein Gerät **Growatt Plant** mit Summe aller Noah/Nexa/WR:
 
-| Größe | Formel |
+`sensor.gc_plant_soc`, `solar_power`, `output_power`, `charged_today`, `discharged_today`, `generation_today`, `energy_today`, …
+
+Einzelne PV-Strings bleiben am jeweiligen MQTT-Gerät.
+
+## Rechnung
+
+| Größe | Quelle |
 |-------|--------|
-| Speicher jetzt | SoC% × 4096 Wh |
-| **In die Batterie** | max(0, jetzt − SoC₀) |
-| **Aus der Batterie** | max(0, SoC₀ − jetzt) |
-| Verlust Batterie | (SoC₀ + Solar − Zum WR) − jetzt |
-| Zum WR | Input 1 + Input 2 |
-| Vom Balkon | energy_today |
-| Verlust WR | Zum WR − Vom Balkon |
-| **Gesamtstrombedarf** | Netzbezug + Vom Balkon − Einspeisung |
+| Speicher jetzt | `sensor.gc_plant_battery_energy` |
+| **In die Batterie** | `charged_today` (Integration der Ladeleistung, nicht Netto-SoC) |
+| **Aus der Batterie** | `discharged_today` |
+| Zum WR | WR Input 1+2 wenn Suffix gesetzt, sonst Plant `energy_today` |
+| Vom Balkon | Plant `energy_today` |
+| **Eigenverbrauch** | (Balkon − Einspeisung) / Balkon |
+| **Autarkie** | (Balkon − Einspeisung) / Gesamtbedarf |
+| **Gesamtstrombedarf** | Netzbezug + Balkon − Einspeisung |

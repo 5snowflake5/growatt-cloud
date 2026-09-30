@@ -3,12 +3,15 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
 import sys
 import time
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from api import (
     GrowattApiError,
@@ -16,20 +19,22 @@ from api import (
     MIN_INTERVAL_NOAH_S,
     MIN_INTERVAL_OTHER_S,
 )
+from ha_env import resolve_mqtt, resolve_timezone
 from mqtt_ha import HaMqtt
-from sensors import ensure_storage_slots, merge_device_values
+from sensors import apply_derived_values, ensure_storage_slots, merge_device_values
 
 # VERSION = config.yaml version; nur Release-Workflow ändert beides
 VERSION = "0.1.29"
 OPTIONS_PATHS = ("/data/options.json", "options.json")
 SOLAR_SPLIT_ENERGY_PATH = "/data/growatt_solar_split_energy.json"
-# Legacy-Pfad (Migration)
 _LEGACY_TOWER_ENERGY_PATH = "/data/growatt_tower_energy.json"
+ENERGY_SAVE_INTERVAL_S = 300
 LOG = logging.getLogger("growatt-cloud")
 
 STORAGE_TYPES = {"noah", "nexa"}
 INVERTER_TYPES = {"min", "inv", "tlx"}
 INFO_INTERVAL_S = 300  # queryDeviceInfo / WiFi – offizielles Details-Limit
+PLANT_SERIAL = "plant"
 
 
 def setup_logging(level_name: str = "info") -> None:
@@ -48,8 +53,6 @@ def load_options() -> dict[str, Any]:
     for path in OPTIONS_PATHS:
         if os.path.isfile(path):
             with open(path, encoding="utf-8") as fh:
-                import json
-
                 return json.load(fh)
     return {}
 
@@ -61,6 +64,23 @@ def env_or(opts: dict[str, Any], key: str, default: Any = "") -> Any:
     return opts.get(key, default)
 
 
+def _poll_seconds(opts: dict[str, Any], key: str, default: int, recommended_min: int) -> int:
+    """Supervisor allows 1–86400; we warn below Growatt's published minimum but do not clamp."""
+    try:
+        value = int(env_or(opts, key, default))
+    except (TypeError, ValueError):
+        value = default
+    value = max(1, min(value, 86400))
+    if value < recommended_min:
+        LOG.warning(
+            "%s=%ss is below Growatt's recommended minimum (%ss) – code 102 / lockout possible",
+            key,
+            value,
+            recommended_min,
+        )
+    return value
+
+
 class Bridge:
     def __init__(self, opts: dict[str, Any]) -> None:
         self.opts = opts
@@ -69,15 +89,11 @@ class Bridge:
         server = str(env_or(opts, "server_url", "https://openapi.growatt.com")).strip()
         self.api = GrowattCloudApi(token=token, server_url=server)
 
-        self.poll_storage_s = max(
-            MIN_INTERVAL_NOAH_S,
-            int(env_or(opts, "poll_storage_seconds", MIN_INTERVAL_NOAH_S)),
+        self.poll_storage_s = _poll_seconds(opts, "poll_storage_seconds", MIN_INTERVAL_NOAH_S, MIN_INTERVAL_NOAH_S)
+        self.poll_inverter_s = _poll_seconds(
+            opts, "poll_inverter_seconds", MIN_INTERVAL_OTHER_S, MIN_INTERVAL_OTHER_S
         )
-        self.poll_inverter_s = max(
-            MIN_INTERVAL_OTHER_S,
-            int(env_or(opts, "poll_inverter_seconds", MIN_INTERVAL_OTHER_S)),
-        )
-        self.poll_devices_s = max(300, int(env_or(opts, "poll_devices_seconds", 3600)))
+        self.poll_devices_s = _poll_seconds(opts, "poll_devices_seconds", 3600, 300)
         self.sensor_mode = str(env_or(opts, "sensor_mode", "useful")).strip().lower() or "useful"
         if self.sensor_mode not in ("useful", "full"):
             LOG.warning("sensor_mode=%s ungültig – nutze useful", self.sensor_mode)
@@ -88,11 +104,28 @@ class Bridge:
                 "sensor_mode auf 'useful' stellen."
             )
 
+        try:
+            self.pack_capacity_wh = float(env_or(opts, "pack_capacity_wh", 2048) or 0)
+        except (TypeError, ValueError):
+            self.pack_capacity_wh = 2048.0
+        self.tz_name = resolve_timezone(str(env_or(opts, "timezone", "") or ""))
+        try:
+            self._tz = ZoneInfo(self.tz_name)
+        except Exception:
+            self._tz = ZoneInfo("UTC")
+            self.tz_name = "UTC"
+
+        mqtt_host, mqtt_port, mqtt_user, mqtt_password = resolve_mqtt(
+            str(env_or(opts, "mqtt_host", "core-mosquitto")),
+            int(env_or(opts, "mqtt_port", 1883) or 1883),
+            str(env_or(opts, "mqtt_user", "") or ""),
+            str(env_or(opts, "mqtt_password", "") or ""),
+        )
         self.mqtt = HaMqtt(
-            host=str(env_or(opts, "mqtt_host", "core-mosquitto")),
-            port=int(env_or(opts, "mqtt_port", 1883)),
-            username=str(env_or(opts, "mqtt_user", "")),
-            password=str(env_or(opts, "mqtt_password", "")),
+            host=mqtt_host,
+            port=mqtt_port,
+            username=mqtt_user,
+            password=mqtt_password,
             discovery_prefix=str(env_or(opts, "mqtt_discovery_prefix", "homeassistant")),
             state_prefix=str(env_or(opts, "mqtt_state_prefix", "growatt_cloud")),
             sensor_mode=self.sensor_mode,
@@ -102,16 +135,24 @@ class Bridge:
         self._last_devices = 0.0
         self._last_storage: dict[str, float] = {}
         self._last_inverter: dict[str, float] = {}
-        self._pack_floor: dict[str, int] = {}  # SN → max gesehene Packs (nie runter)
-        self._solar_split_wh: dict[str, dict[str, float]] = {}  # SN → {day, strings, other, ts}
-        self._load_solar_split_energy()
+        self._pack_floor: dict[str, int] = {}
+        self._energy_wh: dict[str, dict[str, float]] = {}
+        self._latest: dict[str, dict[str, Any]] = {}
+        self._latest_kind: dict[str, str] = {}
+        self._last_energy_save = 0.0
+        self._energy_dirty = False
+        self._load_energy_state()
 
     def request_stop(self, *_args) -> None:
         self.stop = True
 
-    def _load_solar_split_energy(self) -> None:
-        import json
+    def _local_now(self) -> datetime:
+        return datetime.now(self._tz)
 
+    def _local_day(self) -> str:
+        return self._local_now().strftime("%Y-%m-%d")
+
+    def _load_energy_state(self) -> None:
         for path in (SOLAR_SPLIT_ENERGY_PATH, _LEGACY_TOWER_ENERGY_PATH):
             if not os.path.isfile(path):
                 continue
@@ -127,23 +168,30 @@ class Bridge:
                             "day": state.get("day"),
                             "strings": float(state.get("strings") or state.get("t1") or 0.0),
                             "other": float(state.get("other") or state.get("t2") or 0.0),
+                            "charge": float(state.get("charge") or 0.0),
+                            "discharge": float(state.get("discharge") or 0.0),
                             "ts": float(state.get("ts") or 0.0),
                         }
-                    self._solar_split_wh = migrated
+                    self._energy_wh = migrated
                     return
             except Exception as exc:
-                LOG.debug("Solar-Split laden (%s): %s", path, exc)
-        self._solar_split_wh = {}
+                LOG.debug("Energy-State laden (%s): %s", path, exc)
+        self._energy_wh = {}
 
-    def _save_solar_split_energy(self) -> None:
+    def _save_energy_state(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and not self._energy_dirty:
+            return
+        if not force and (now - self._last_energy_save) < ENERGY_SAVE_INTERVAL_S:
+            return
         try:
             os.makedirs(os.path.dirname(SOLAR_SPLIT_ENERGY_PATH), exist_ok=True)
-            import json
-
             with open(SOLAR_SPLIT_ENERGY_PATH, "w", encoding="utf-8") as fh:
-                json.dump(self._solar_split_wh, fh)
+                json.dump(self._energy_wh, fh)
+            self._last_energy_save = now
+            self._energy_dirty = False
         except Exception as exc:
-            LOG.debug("Solar-Split speichern: %s", exc)
+            LOG.debug("Energy-State speichern: %s", exc)
 
     def _apply_sticky_packs(self, sn: str, values: dict[str, Any]) -> None:
         packs = int(values.get("battery_num") or 1)
@@ -157,26 +205,116 @@ class Bridge:
                 values.setdefault(f"battery{i}_soc", 0.0)
                 values.setdefault(f"battery{i}_temp", 0.0)
 
-    def _accumulate_solar_split_energy(self, sn: str, values: dict[str, Any]) -> None:
-        """Tages-kWh für PV1–4 (Master) und Other Storage aus Live-Leistung integrieren."""
+    def _accumulate_energy(self, sn: str, values: dict[str, Any], poll_s: int) -> None:
+        """Tages-kWh aus Live-Leistung (PV-Split, Laden, Entladen)."""
         now = time.time()
-        day = time.strftime("%Y-%m-%d", time.localtime(now))
-        state = self._solar_split_wh.get(sn) or {"day": day, "strings": 0.0, "other": 0.0, "ts": now}
+        day = self._local_day()
+        state = self._energy_wh.get(sn) or {
+            "day": day,
+            "strings": 0.0,
+            "other": 0.0,
+            "charge": 0.0,
+            "discharge": 0.0,
+            "ts": now,
+        }
         if state.get("day") != day:
-            state = {"day": day, "strings": 0.0, "other": 0.0, "ts": now}
-        last = float(state.get("ts") or now)
-        dt_h = max(0.0, min((now - last) / 3600.0, 2.0))
+            state = {
+                "day": day,
+                "strings": 0.0,
+                "other": 0.0,
+                "charge": 0.0,
+                "discharge": 0.0,
+                "ts": now,
+            }
+        last = float(state.get("ts") or 0.0)
+        max_dt_h = max(2 * poll_s, 30) / 3600.0
+        dt_h = 0.0
+        if last > 0:
+            dt_h = max(0.0, min((now - last) / 3600.0, max_dt_h))
         strings_w = float(values.get("solar_power_storage1") or 0.0)
         other_w = float(values.get("solar_power_other_storage") or 0.0)
+        charge_w = float(values.get("charging_power") or 0.0)
+        discharge_w = float(values.get("discharge_power") or 0.0)
         if last and dt_h > 0:
             state["strings"] = float(state.get("strings") or 0.0) + strings_w * dt_h
             state["other"] = float(state.get("other") or 0.0) + other_w * dt_h
+            state["charge"] = float(state.get("charge") or 0.0) + charge_w * dt_h
+            state["discharge"] = float(state.get("discharge") or 0.0) + discharge_w * dt_h
         state["ts"] = now
         state["day"] = day
-        self._solar_split_wh[sn] = state
+        self._energy_wh[sn] = state
+        self._energy_dirty = True
         values["generation_today_storage1"] = round(float(state["strings"]) / 1000.0, 3)
         values["generation_today_other_storage"] = round(float(state["other"]) / 1000.0, 3)
-        self._save_solar_split_energy()
+        values["charged_today"] = round(float(state["charge"]) / 1000.0, 3)
+        values["discharged_today"] = round(float(state["discharge"]) / 1000.0, 3)
+        self._save_energy_state()
+
+    def _publish_plant(self) -> None:
+        storage = [v for sn, v in self._latest.items() if self._latest_kind.get(sn) == "storage"]
+        inverters = [v for sn, v in self._latest.items() if self._latest_kind.get(sn) == "min"]
+        if not storage and not inverters:
+            return
+
+        def _sum(rows: list[dict[str, Any]], key: str) -> float:
+            total = 0.0
+            for row in rows:
+                try:
+                    total += float(row.get(key) or 0.0)
+                except (TypeError, ValueError):
+                    continue
+            return total
+
+        values: dict[str, Any] = {
+            "family": "plant",
+            "label": "Plant",
+            "device_name": "Growatt Plant",
+            "product": "Plant",
+            "solar_power": round(_sum(storage, "solar_power"), 1),
+            "output_power": round(_sum(storage, "output_power"), 1),
+            "charging_power": round(_sum(storage, "charging_power"), 1),
+            "discharge_power": round(_sum(storage, "discharge_power"), 1),
+            "generation_today": round(_sum(storage, "generation_today"), 3),
+            "generation_total": round(_sum(storage, "generation_total"), 3),
+            "charged_today": round(_sum(storage, "charged_today"), 3),
+            "discharged_today": round(_sum(storage, "discharged_today"), 3),
+            "grid_import_power": round(_sum(storage, "grid_import_power"), 1),
+            "grid_export_power": round(_sum(storage, "grid_export_power"), 1),
+            "household_load": round(_sum(storage, "household_load"), 1),
+            "ac_power": round(_sum(inverters, "ac_power"), 1),
+            "energy_today": round(_sum(inverters, "energy_today"), 3),
+            "energy_total": round(_sum(inverters, "energy_total"), 3),
+            "connectivity": "ON",
+        }
+        energy = _sum(storage, "battery_energy")
+        if energy:
+            values["battery_energy"] = round(energy, 0)
+            cap = 0.0
+            weighted = 0.0
+            for row in storage:
+                try:
+                    e = float(row.get("battery_energy") or 0.0)
+                    soc = float(row.get("soc") or 0.0)
+                except (TypeError, ValueError):
+                    continue
+                if e > 0:
+                    cap += e / max(soc / 100.0, 0.001)
+                    weighted += soc * e
+            if energy > 0 and weighted:
+                values["soc"] = round(weighted / energy, 1)
+            values["battery_num"] = int(_sum(storage, "battery_num"))
+        elif storage:
+            socs = []
+            for row in storage:
+                try:
+                    if row.get("soc") is not None:
+                        socs.append(float(row["soc"]))
+                except (TypeError, ValueError):
+                    continue
+            if socs:
+                values["soc"] = round(sum(socs) / len(socs), 1)
+        self.mqtt.ensure_discovery(PLANT_SERIAL, "Plant", values)
+        self.mqtt.publish_states(PLANT_SERIAL, values)
 
     def refresh_devices(self, force: bool = False) -> None:
         now = time.monotonic()
@@ -212,7 +350,6 @@ class Bridge:
         return out
 
     def _enrich(self, sn: str, api_type: str, energy: dict[str, Any], kind: str) -> dict[str, Any]:
-        """Info/WiFi nur aus Cache oder selten – blockieren nicht den Energy-Slot."""
         info: dict[str, Any] = {}
         wifi: float | None = None
         try:
@@ -223,13 +360,20 @@ class Bridge:
             wifi = self.api.wifi_strength(sn, api_type, min_interval_s=INFO_INTERVAL_S)
         except GrowattApiError as exc:
             LOG.debug("WiFi %s: %s", sn, exc)
-        return merge_device_values(
+        values = merge_device_values(
             energy, info, kind=kind, wifi_dbm=wifi, serial=sn, mode=self.sensor_mode
         )
+        apply_derived_values(
+            values,
+            kind=kind,
+            tz_name=self.tz_name,
+            pack_capacity_wh=self.pack_capacity_wh,
+        )
+        return values
 
     def poll_storage(self) -> None:
-        """Alle fälligen Noah/Nexa pollen (Limit ist pro SN, nicht global)."""
         now = time.monotonic()
+        changed = False
         for sn, api_type in self.storage_targets():
             if now - self._last_storage.get(sn, 0.0) < self.poll_storage_s:
                 continue
@@ -237,14 +381,23 @@ class Bridge:
                 raw = self.api.query_last_data(sn, api_type)
                 values = self._enrich(sn, api_type, raw, "storage")
                 self._apply_sticky_packs(sn, values)
-                self._accumulate_solar_split_energy(sn, values)
+                apply_derived_values(
+                    values,
+                    kind="storage",
+                    tz_name=self.tz_name,
+                    pack_capacity_wh=self.pack_capacity_wh,
+                )
+                self._accumulate_energy(sn, values, self.poll_storage_s)
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
+                self._latest[sn] = values
+                self._latest_kind[sn] = "storage"
                 self._last_storage[sn] = time.monotonic()
+                changed = True
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
                     "%s %s SoC=%s%% PV=%.0fW PV1-4=%.0fW Other=%.0fW "
-                    "Out=%.0fW Today=%.2fkWh PV1-4=%.2f Other=%.2fkWh packs=%s bat2=%s%% mode=%s entities=%s",
+                    "Out=%.0fW Today=%.2fkWh Charge=%.2f Discharge=%.2fkWh packs=%s mode=%s entities=%s tz=%s",
                     values["label"],
                     sn,
                     values.get("soc"),
@@ -253,20 +406,23 @@ class Bridge:
                     values.get("solar_power_other_storage") or 0,
                     values.get("output_power") or 0,
                     values.get("generation_today") or 0,
-                    values.get("generation_today_storage1") or 0,
-                    values.get("generation_today_other_storage") or 0,
+                    values.get("charged_today") or 0,
+                    values.get("discharged_today") or 0,
                     values.get("battery_num"),
-                    values.get("battery2_soc"),
                     self.sensor_mode,
                     entity_n,
+                    self.tz_name,
                 )
             except GrowattApiError as exc:
                 LOG.error("Speicher %s: %s", sn, exc)
                 if exc.code in (100, 102, 10012):
                     self._last_storage[sn] = time.monotonic()
+        if changed:
+            self._publish_plant()
 
     def poll_inverter(self) -> None:
         now = time.monotonic()
+        changed = False
         for sn, api_type in self.inverter_targets():
             last = self._last_inverter.get(sn, 0.0)
             if now - last < self.poll_inverter_s:
@@ -276,7 +432,10 @@ class Bridge:
                 values = self._enrich(sn, api_type, raw, "min")
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
+                self._latest[sn] = values
+                self._latest_kind[sn] = "min"
                 self._last_inverter[sn] = time.monotonic()
+                changed = True
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
                     "WR %s AC=%.0fW Today=%.2fkWh In1=%.2f In2=%.2f mode=%s entities=%s",
@@ -292,9 +451,17 @@ class Bridge:
                 LOG.error("WR %s: %s", sn, exc)
                 if exc.code in (100, 102, 10012):
                     self._last_inverter[sn] = time.monotonic()
+        if changed:
+            self._publish_plant()
 
     def run(self) -> None:
-        LOG.info("growatt_cloud %s start (Geräte auto, sensor_mode=%s)", VERSION, self.sensor_mode)
+        LOG.info(
+            "growatt_cloud %s start (Geräte auto, sensor_mode=%s, tz=%s, pack_wh=%s)",
+            VERSION,
+            self.sensor_mode,
+            self.tz_name,
+            self.pack_capacity_wh,
+        )
         self.mqtt.connect()
         if not self.mqtt.wait_connected(5):
             LOG.warning("Starte Poll-Loop trotzdem – MQTT-Reconnect läuft im Hintergrund")
@@ -317,6 +484,7 @@ class Bridge:
                 if self.stop:
                     break
                 time.sleep(1)
+        self._save_energy_state(force=True)
         self.mqtt.stop()
         LOG.info("stopped")
 

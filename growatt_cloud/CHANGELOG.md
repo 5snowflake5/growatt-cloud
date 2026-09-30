@@ -4,14 +4,29 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- Plant-Gerät `sensor.gc_plant_*` (Summe Speicher/WR, Dashboards ohne Geräte-Serial).
+- `charged_today` / `discharged_today`, `battery_energy`, Netz Import/Export, Zeit bis leer/voll.
+- Optionen `timezone` (leer = Home Assistant) und `pack_capacity_wh`.
+- MQTT-User/Pass vom Supervisor, wenn leer.
+- HA-Paket `growatt_energy.yaml`: S0 um Mitternacht, Eigenverbrauch, Autarkie.
+
+### Changed
+- Poll-Intervalle in der App-Config 1–86400 s (Warnung unter Growatt-Minimum, kein harter Block).
+- Idle-Sensoren bleiben auf 0 (keine Löschung von Tages-kWh nachts).
+- Fehlende API-Werte werden nicht mehr als 0 veröffentlicht.
+- `generation_month` / `generation_year` als `total` (kein `total_increasing`).
+- MQTT: `entity_category: diagnostic` für WiFi/Firmware/Status; Icons.
+
+### Removed
+- Fest verdrahtete Geräte-Serials in Home-Assistant-Beispielen.
+
 ## [0.1.29] – 2026-09-02
 
 ### Changed
 - Gerätename ohne 2T/3T-Suffix (z. B. Nexa statt Nexa 3T).
-## [Unreleased]
-
-### Fixed
-- HA-Gerätename: `2T`/`3T` aus Growatt-Model/Alias entfernt (z. B. „Nexa 3T …“ → „Nexa 0HVR…“).
 
 ## [0.1.28] – 2026-09-02
 

@@ -24,8 +24,8 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "discharge_power": ("Discharge Power", "W", "power", "measurement", "sensor"),
     "generation_today": ("Generation Today", "kWh", "energy", "total_increasing", "sensor"),
     "generation_total": ("Generation Total", "kWh", "energy", "total_increasing", "sensor"),
-    "generation_month": ("Generation Month", "kWh", "energy", "total_increasing", "sensor"),
-    "generation_year": ("Generation Year", "kWh", "energy", "total_increasing", "sensor"),
+    "generation_month": ("Generation Month", "kWh", "energy", "total", "sensor"),
+    "generation_year": ("Generation Year", "kWh", "energy", "total", "sensor"),
     "battery_num": ("Number Of Batteries", None, None, "measurement", "sensor"),
     "system_temp": ("System Temperature", "°C", "temperature", "measurement", "sensor"),
     "ct_power": ("CT Power", "W", "power", "measurement", "sensor"),
@@ -72,6 +72,22 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
     "solar_power_other_storage": ("Solar Power Other Storage", "W", "power", "measurement", "sensor"),
     "generation_today_storage1": ("Generation Today PV1-4", "kWh", "energy", "total_increasing", "sensor"),
     "generation_today_other_storage": ("Generation Today Other Storage", "kWh", "energy", "total_increasing", "sensor"),
+    "charged_today": ("Charged Today", "kWh", "energy", "total_increasing", "sensor"),
+    "discharged_today": ("Discharged Today", "kWh", "energy", "total_increasing", "sensor"),
+    "battery_energy": ("Battery Energy", "Wh", "energy", "measurement", "sensor"),
+    "grid_import_power": ("Grid Import Power", "W", "power", "measurement", "sensor"),
+    "grid_export_power": ("Grid Export Power", "W", "power", "measurement", "sensor"),
+    "time_to_empty": ("Time To Empty", "min", "duration", "measurement", "sensor"),
+    "time_to_full": ("Time To Full", "min", "duration", "measurement", "sensor"),
+    "allow_grid_charging": ("Allow Grid Charging", None, None, None, "binary_sensor"),
+    "ct_flag": ("CT Connected", None, None, None, "binary_sensor"),
+    "fw_version": ("Firmware", None, None, None, "sensor"),
+    "hw_version": ("Hardware Version", None, None, None, "sensor"),
+    "alias": ("Alias", None, None, None, "sensor"),
+    "model": ("Model", None, None, None, "sensor"),
+    "warn_text": ("Warning", None, None, None, "sensor"),
+    "error_text": ("Error", None, None, None, "sensor"),
+    "fault_status": ("Fault Status", None, None, "measurement", "sensor"),
     "ac_power": ("AC Power", "W", "power", "measurement", "sensor"),
     "ac_power_r": ("AC Power R", "W", "power", "measurement", "sensor"),
     "ac_power_s": ("AC Power S", "W", "power", "measurement", "sensor"),
@@ -128,7 +144,49 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
 
 _META_SKIP = {"family", "label", "time", "device_name"}
 
-DISCOVERY_SIG_VERSION = "v8"
+DISCOVERY_SIG_VERSION = "v9"
+
+SENSOR_ICONS: dict[str, str] = {
+    "soc": "mdi:battery",
+    "solar_power": "mdi:solar-power",
+    "output_power": "mdi:transmission-tower-export",
+    "charging_power": "mdi:battery-charging",
+    "discharge_power": "mdi:battery-arrow-down",
+    "generation_today": "mdi:solar-power-variant",
+    "charged_today": "mdi:battery-plus",
+    "discharged_today": "mdi:battery-minus",
+    "battery_energy": "mdi:battery-high",
+    "household_load": "mdi:home-lightning-bolt",
+    "grid_import_power": "mdi:transmission-tower-import",
+    "grid_export_power": "mdi:transmission-tower-export",
+    "wifi_signal": "mdi:wifi",
+    "connectivity": "mdi:lan-connect",
+    "work_mode": "mdi:cog",
+    "heating": "mdi:radiator",
+    "ct_flag": "mdi:meter-electric",
+    "allow_grid_charging": "mdi:transmission-tower",
+    "time_to_empty": "mdi:timer-sand",
+    "time_to_full": "mdi:timer-sand-complete",
+}
+
+DIAGNOSTIC_KEYS = frozenset(
+    {
+        "wifi_signal",
+        "fw_version",
+        "hw_version",
+        "last_update",
+        "status_code",
+        "work_mode_code",
+        "connectivity",
+        "product",
+        "alias",
+        "model",
+        "inner_version",
+        "warn_text",
+        "error_text",
+        "fault_status",
+    }
+)
 
 # Frühere Fake-Geräte (virtueller 2. Noah) – einmalig per MQTT Discovery löschen
 _FAKE_TOWER_OBJECT_IDS = frozenset({
@@ -439,10 +497,15 @@ class HaMqtt:
             payload["unit_of_measurement"] = unit
         if device_class:
             payload["device_class"] = device_class
-        if state_class:
-            payload["state_class"] = state_class
         if device_class == "energy":
-            payload["state_class"] = "total_increasing"
+            payload["state_class"] = state_class or "total_increasing"
+        elif state_class:
+            payload["state_class"] = state_class
+        icon = SENSOR_ICONS.get(object_id)
+        if icon:
+            payload["icon"] = icon
+        if object_id in DIAGNOSTIC_KEYS:
+            payload["entity_category"] = "diagnostic"
         if device_class == "timestamp" and not (isinstance(val, str) and "T" in val):
             payload.pop("device_class", None)
         self._pub(topic, json.dumps(payload), retain=True)

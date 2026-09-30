@@ -8,6 +8,7 @@ werden als Sensoren veröffentlicht. Zusätzlich bleiben freundliche Aliase
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 WORK_MODE = {0: "load_first", 1: "battery_first", 2: "smart"}
@@ -39,7 +40,8 @@ def _camel_to_snake(name: str) -> str:
     return text.replace("-", "_").lower()
 
 
-def _num(data: dict[str, Any], *keys: str, default: float | None = 0.0) -> float | None:
+def _num(data: dict[str, Any], *keys: str, default: float | None = None) -> float | None:
+    """Missing keys stay None – never invent 0 (0 % SoC looks like an empty battery)."""
     for key in keys:
         if key in data and data[key] not in (None, ""):
             try:
@@ -247,6 +249,7 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
         _pick(raw, "deviceSn", "device_sn", "datalogSn", "datalog_sn", "dataloggerSn", "datalogger_sn") or ""
     )
     label = detect_storage_label(raw, sn or None)
+    pac = _num(raw, "pac")
 
     out: dict[str, Any] = {
         "family": label.lower(),
@@ -255,7 +258,7 @@ def _curated_storage(raw: dict[str, Any], serial: str | None = None) -> dict[str
         "product": label,
         "soc": _num(raw, "totalBatteryPackSoc", "total_battery_pack_soc", "soc"),
         "solar_power": _num(raw, "ppv"),
-        "output_power": abs(_num(raw, "pac") or 0.0),
+        "output_power": None if pac is None else abs(pac),
         "charging_power": charge_w,
         "discharge_power": discharge_w,
         "generation_today": _num(raw, "eacToday", "eac_today"),
@@ -387,11 +390,14 @@ def _curated_min(raw: dict[str, Any]) -> dict[str, Any]:
 _USEFUL_EXTRA_STORAGE = {
     "wifi_signal",
     "fw_version",
+    "hw_version",
     "model",
     "alias",
     "max_cell_voltage",
     "min_cell_voltage",
     "fault_status",
+    "warn_text",
+    "error_text",
     "on_grid_voltage",
     "on_grid_current",
     "off_grid_voltage",
@@ -403,15 +409,20 @@ _USEFUL_EXTRA_STORAGE = {
     "device_to_grid_power",
     "grid_to_device_power",
     "allow_grid_charging",
+    "ct_flag",
 }
 
 _USEFUL_EXTRA_MIN = {
     "wifi_signal",
     "fw_version",
+    "hw_version",
     "inner_version",
     "model_text",
     "pmax",
     "status_text",
+    "warn_text",
+    "error_text",
+    "fault_type",
 }
 
 # Roh-Duplikate der freundlichen Aliase
@@ -499,7 +510,6 @@ _ALWAYS_DROP_KEYS = {
     "day",
     "with_time",
     "time_total",
-    "total_working_time",
     "group_id",
     "id",
     "level",
@@ -514,7 +524,6 @@ _ALWAYS_DROP_KEYS = {
     "device_type",
     "dtc",
     "modbus_version",
-    "hw_version",
     "version_flag",
     "priority_choose",
     "traker_model",
@@ -575,8 +584,6 @@ _ALWAYS_DROP_KEYS = {
     "e_total",
     "energy_month",
     "energy_month_text",
-    "warn_text",
-    "error_text",
     "iacr",
     "vacr",
     "vacrs",
@@ -589,8 +596,6 @@ _ALWAYS_DROP_KEYS = {
     "dci_r",
     "dci_s",
     "dci_t",
-    "fault_type",
-    "fault_type1",
     "new_warn_code",
     "new_warn_sub_code",
     "warn_code",
@@ -682,43 +687,6 @@ def _is_epoch_ms(value: Any) -> bool:
     return 1_000_000_000_000 <= n <= 4_000_000_000_000
 
 
-def _prune_inactive_pv(out: dict[str, Any]) -> None:
-    for i in range(1, 5):
-        power = out.get(f"pv{i}_power")
-        if power is None:
-            power = out.get(f"ppv{i}")
-        volts = out.get(f"pv{i}_voltage")
-        if volts is None:
-            volts = out.get(f"vpv{i}")
-        amps = out.get(f"pv{i}_current")
-        if amps is None:
-            amps = out.get(f"ipv{i}")
-        active = False
-        for v in (power, volts, amps):
-            try:
-                if v is not None and abs(float(v)) > 0.05:
-                    active = True
-                    break
-            except (TypeError, ValueError):
-                continue
-        if active:
-            continue
-        for key in (
-            f"pv{i}_power",
-            f"pv{i}_voltage",
-            f"pv{i}_current",
-            f"pv{i}_temp",
-            f"ppv{i}",
-            f"vpv{i}",
-            f"ipv{i}",
-            f"energy_today_input_{i}",
-            f"energy_total_input_{i}",
-            f"epv{i}_today",
-            f"epv{i}_total",
-        ):
-            out.pop(key, None)
-
-
 def _has_min_battery(out: dict[str, Any]) -> bool:
     for key in ("bms_soc", "bdc1_soc", "bdc1_vbat", "soc1", "bms_vbat"):
         try:
@@ -778,19 +746,6 @@ def _prune_min_noise(out: dict[str, Any], *, aggressive: bool) -> None:
             out.pop(key, None)
             continue
         if aggressive and key.startswith(("eac_charge", "echarge", "edischarge", "eself", "esystem")):
-            if _near_zero(out[key]):
-                out.pop(key, None)
-        if aggressive and key in (
-            "export_power",
-            "import_power",
-            "local_load_power",
-            "energy_to_grid_today",
-            "energy_to_grid_total",
-            "energy_to_user_today",
-            "energy_to_user_total",
-            "energy_local_load_today",
-            "energy_local_load_total",
-        ):
             if _near_zero(out[key]):
                 out.pop(key, None)
 
@@ -861,7 +816,6 @@ def filter_published_values(
             out.pop(key, None)
             continue
 
-    _prune_inactive_pv(out) if kind == "min" else None
     if kind == "min":
         _prune_min_phases(out)
         _prune_zero_temps(out)
@@ -878,45 +832,23 @@ def filter_published_values(
             try:
                 out["allow_grid_charging"] = "ON" if int(float(out["allow_grid_charging"])) else "OFF"
             except (TypeError, ValueError):
-                out.pop("allow_grid_charging", None)
-        for key in list(out.keys()):
-            if key.endswith(("_protect_status", "_warn_status")) or key in (
-                "ac_couple_protect_status",
-                "ac_couple_warn_status",
-                "mppt_protect_status",
-                "pd_warn_status",
-                "fault_status",
-            ):
+                out["allow_grid_charging"] = "OFF"
+        if "ct_flag" in out:
+            val = out["ct_flag"]
+            if isinstance(val, str) and val.upper() in ("ON", "OFF"):
+                out["ct_flag"] = val.upper()
+            else:
                 try:
-                    if float(out[key]) == 0:
-                        out.pop(key, None)
+                    out["ct_flag"] = "ON" if int(float(val)) else "OFF"
                 except (TypeError, ValueError):
-                    out.pop(key, None)
+                    out["ct_flag"] = "ON" if val not in (None, "", False, "false", "False") else "OFF"
         if kind == "min":
             _prune_min_phases(out)
             _prune_zero_temps(out)
-            # optionale Null-Energien im useful-Modus weg
-            for key in list(out.keys()):
-                if key.startswith(("energy_to_", "energy_local_", "export_", "import_", "local_load_")):
-                    if _near_zero(out[key]):
-                        out.pop(key, None)
     else:
-        # full: weiterhin stark bereinigt (kein Balkon-Wahnsinn), aber Extra-Felder erlaubt
-        for key in list(out.keys()):
-            if key.endswith(("_protect_status", "_warn_status")) or key in (
-                "ac_couple_protect_status",
-                "ac_couple_warn_status",
-                "mppt_protect_status",
-                "pd_warn_status",
-                "fault_status",
-            ):
-                try:
-                    if float(out[key]) == 0:
-                        out.pop(key, None)
-                except (TypeError, ValueError):
-                    pass
+        # full: still drop MIN BMS ghosts, but keep 0 W / 0 kWh / fault=0
         if kind == "min":
-            _prune_min_noise(out, aggressive=True)
+            _prune_min_noise(out, aggressive=False)
 
     out.update(meta)
     # Speicher: PV1–4 + Solar-Split (Master-Strings vs. Other Storage)
@@ -972,11 +904,20 @@ _CURATED_KEEP_STORAGE = {
     "battery_soh",
     "battery_cycles",
     "work_mode",
+    "work_mode_code",
     "charge_status",
     "status_code",
     "heating",
     "connectivity",
     "last_update",
+    "charged_today",
+    "discharged_today",
+    "battery_energy",
+    "grid_import_power",
+    "grid_export_power",
+    "time_to_empty",
+    "time_to_full",
+    "ct_flag",
     "battery1_soc",
     "battery1_temp",
     "battery2_soc",
@@ -1057,6 +998,114 @@ _CURATED_KEEP_MIN = {
     "connectivity",
     "last_update",
 }
+
+def to_iso_timestamp(value: Any, tz_name: str | None = None) -> Any:
+    """Growatt `2026-09-30 10:00:00` → ISO-8601 with offset for HA timestamp."""
+    if value is None or value == "":
+        return value
+    text = str(value).strip()
+    if not text:
+        return value
+    if "T" in text:
+        return text
+    tzinfo = timezone.utc
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+
+            tzinfo = ZoneInfo(tz_name)
+        except Exception:
+            pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(text, fmt)
+            return dt.replace(tzinfo=tzinfo).isoformat()
+        except ValueError:
+            continue
+    return value
+
+
+def split_signed_power(watts: Any) -> tuple[float | None, float | None]:
+    """Positive CT → grid import, negative → export (both ≥ 0)."""
+    if watts is None or watts == "":
+        return None, None
+    try:
+        value = float(watts)
+    except (TypeError, ValueError):
+        return None, None
+    if value >= 0:
+        return round(value, 1), 0.0
+    return 0.0, round(abs(value), 1)
+
+
+def apply_derived_values(
+    values: dict[str, Any],
+    *,
+    kind: str,
+    tz_name: str | None = None,
+    pack_capacity_wh: float = 0.0,
+) -> None:
+    """ISO last_update, battery Wh, grid split, time-to-empty/full. Mutates values."""
+    if values.get("last_update") is not None:
+        values["last_update"] = to_iso_timestamp(values.get("last_update"), tz_name)
+
+    if kind != "storage":
+        return
+
+    soc = values.get("soc")
+    packs = int(values.get("battery_num") or 1)
+    packs = max(1, min(packs, 4))
+    if pack_capacity_wh > 0 and soc is not None:
+        try:
+            capacity = float(pack_capacity_wh) * packs
+            energy = float(soc) / 100.0 * capacity
+            values["battery_energy"] = round(energy, 0)
+        except (TypeError, ValueError):
+            pass
+
+    import_w, export_w = None, None
+    if values.get("grid_to_device_power") is not None or values.get("device_to_grid_power") is not None:
+        try:
+            import_w = abs(float(values.get("grid_to_device_power") or 0.0))
+        except (TypeError, ValueError):
+            import_w = 0.0
+        try:
+            export_w = abs(float(values.get("device_to_grid_power") or 0.0))
+        except (TypeError, ValueError):
+            export_w = 0.0
+    else:
+        import_w, export_w = split_signed_power(values.get("ct_power"))
+    if import_w is not None:
+        values["grid_import_power"] = import_w
+    if export_w is not None:
+        values["grid_export_power"] = export_w
+
+    energy = values.get("battery_energy")
+    try:
+        energy_f = float(energy) if energy is not None else None
+    except (TypeError, ValueError):
+        energy_f = None
+    if energy_f is not None and pack_capacity_wh > 0:
+        capacity = float(pack_capacity_wh) * packs
+        try:
+            discharge = float(values.get("discharge_power") or 0.0)
+        except (TypeError, ValueError):
+            discharge = 0.0
+        try:
+            charge = float(values.get("charging_power") or 0.0)
+        except (TypeError, ValueError):
+            charge = 0.0
+        if discharge > 10 and energy_f > 0:
+            values["time_to_empty"] = round(energy_f / discharge * 60.0, 0)
+        if charge > 10 and capacity > energy_f:
+            values["time_to_full"] = round((capacity - energy_f) / charge * 60.0, 0)
+
+    if "ct_flag" in values and not isinstance(values["ct_flag"], str):
+        try:
+            values["ct_flag"] = "ON" if int(float(values["ct_flag"])) else "OFF"
+        except (TypeError, ValueError):
+            values["ct_flag"] = "OFF"
+
 
 # Keys die im useful-Modus nie als „Stale Junk“ gelöscht werden dürfen
 PROTECTED_DISCOVERY_KEYS = frozenset(

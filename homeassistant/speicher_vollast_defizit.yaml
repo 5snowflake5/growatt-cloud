@@ -1,20 +1,7 @@
 # Speicher volle Last + EcoTracker-Mehrbedarf (Minuten/Tag)
 #
-# Zählt Minuten, in denen:
-#   Speicher-Abgabe ≥ Schwelle (volle Last)
-#   UND EcoTracker noch Netzbezug zeigt (> 0 W)
-#
-# Bänder (Mehrbedarf = EcoTracker-Leistung in dem Moment):
-#   0–250 W | 250–500 W | 500–800 W | ≥ 800 W
-#
-# Einrichtung:
-# 1) Datei nach /config/packages/speicher_vollast_defizit.yaml
-# 2) configuration.yaml → homeassistant.packages: !include_dir_named packages
-# 3) Schwelle anpassen (input_number.speicher_voll_last_w):
-#      1× Noah ~800 W → 750
-#      Noah + Nexa     → Summe der Max-Abgaben, z. B. 1500–2300
-# 4) HA neu starten (History Stats brauchen ein paar State-Wechsel)
-# 5) Serials / EcoTracker-Entity prüfen
+# Copy to /config/packages/speicher_vollast_defizit.yaml
+# Uses sensor.gc_plant_output_power (all Noah/Nexa summed by the add-on).
 
 input_number:
   speicher_voll_last_w:
@@ -35,12 +22,8 @@ template:
         device_class: power
         state_class: measurement
         icon: mdi:export
-        # Nur Noah: Nexa-Zeile entfernen. Beide: so lassen.
-        state: >-
-          {{ (
-            states('sensor.gc_example_noah_output_power') | float(0)
-            + states('sensor.gc_example_nexa_output_power') | float(0)
-          ) | round(0) }}
+        state: "{{ states('sensor.gc_plant_output_power') | float(0) | round(0) }}"
+        availability: "{{ states('sensor.gc_plant_output_power') | is_number }}"
 
       - name: "Speicher Vollast Mehrbedarf"
         unique_id: speicher_vollast_mehrbedarf_w

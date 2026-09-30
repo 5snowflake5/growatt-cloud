@@ -1,18 +1,10 @@
-# Growatt Cloud – Auswertung (Sections-View)
+# Growatt / Plant – Auswertung (Sections-View)
 #
-# Entity-IDs ab Addon 0.1.25 (stabil, aus Sensor-Keys – nicht aus Anzeigenamen):
-#   sensor.gc_<serial_klein>_<key>
+# Entity-IDs from the add-on plant device (no personal serials):
+#   sensor.gc_plant_*
+# Per-device PV strings: Settings → Devices → the Noah/Nexa MQTT device.
 #
-# Noah  example_noah → sensor.gc_example_noah_*
-# Nexa  example_nexa → sensor.gc_example_nexa_*
-# WR    example_inverter       → sensor.gc_example_inverter_*
-#
-# Nach Update 0.1.25:
-# 1) Alte MQTT-Geräte Noah/Nexa/WR einmal löschen (die mit …_output_power_2 usw.)
-# 2) Growatt-Cloud-Addon neu starten
-# 3) In Zuständen nach „gc_0pvp“ suchen – dann diese View pasten
-#
-# Dashboard → ⋮ → Rohkonfiguration → unter `views:` ersetzen.
+# Dashboard → ⋮ → Raw configuration → under `views:` paste.
 
 views:
   - type: sections
@@ -23,10 +15,10 @@ views:
       - type: grid
         cards:
           - type: heading
-            heading: Noah – jetzt
+            heading: Speicher – jetzt
             heading_style: title
           - type: gauge
-            entity: sensor.gc_example_noah_soc
+            entity: sensor.gc_plant_soc
             name: SoC gesamt
             min: 0
             max: 100
@@ -35,32 +27,22 @@ views:
               red: 0
               yellow: 20
               green: 40
-          - type: gauge
-            entity: sensor.gc_example_noah_battery1_soc
-            name: Batterie 1
-            min: 0
-            max: 100
-            needle: true
-          - type: gauge
-            entity: sensor.gc_example_noah_battery2_soc
-            name: Batterie 2
-            min: 0
-            max: 100
-            needle: true
           - type: entities
             entities:
-              - entity: sensor.gc_example_noah_solar_power
+              - entity: sensor.gc_plant_solar_power
                 name: Solar gesamt
-              - entity: sensor.gc_example_noah_solar_power_storage1
-                name: Solar PV1–4 (Master)
-              - entity: sensor.gc_example_noah_solar_power_other_storage
-                name: Solar Other Storage
-              - entity: sensor.gc_example_noah_output_power
+              - entity: sensor.gc_plant_output_power
                 name: Abgabe
-              - entity: sensor.gc_example_noah_charging_power
+              - entity: sensor.gc_plant_charging_power
                 name: Laden
-              - entity: sensor.gc_example_noah_discharge_power
+              - entity: sensor.gc_plant_discharge_power
                 name: Entladen
+              - entity: sensor.gc_plant_battery_energy
+                name: Batterie Wh
+              - entity: sensor.gc_plant_grid_import_power
+                name: Netzbezug
+              - entity: sensor.gc_plant_grid_export_power
+                name: Einspeisung
         column_span: 2
 
       - type: grid
@@ -68,194 +50,63 @@ views:
           - type: heading
             heading: Heute (kWh)
             heading_style: title
-          - type: markdown
-            content: |
-              {% set total = states('sensor.gc_example_noah_generation_today') | float(0) %}
-              {% set pv14 = states('sensor.gc_example_noah_generation_today_storage1') | float(0) %}
-              {% set other = states('sensor.gc_example_noah_generation_today_other_storage') | float(0) %}
-              {% set sum = pv14 + other %}
-              {% set live = states('sensor.gc_example_noah_solar_power') | float(0) %}
-              {% set p1 = states('sensor.gc_example_noah_pv1_power') | float(0) %}
-              {% set p2 = states('sensor.gc_example_noah_pv2_power') | float(0) %}
-              {% set p3 = states('sensor.gc_example_noah_pv3_power') | float(0) %}
-              {% set p4 = states('sensor.gc_example_noah_pv4_power') | float(0) %}
-              {% set other_w = states('sensor.gc_example_noah_solar_power_other_storage') | float(0) %}
-
-              **Growatt Generation Today:** {{ total | round(2) }} kWh  
-              **PV1–4 (integriert):** {{ pv14 | round(2) }} kWh  
-              **Other Storage (integriert):** {{ other | round(2) }} kWh  
-              **Summe:** {{ sum | round(2) }} kWh
-
-              ---
-              **Live**  
-              PV1 {{ p1 | round(0) }} W · PV2 {{ p2 | round(0) }} W · PV3 {{ p3 | round(0) }} W · PV4 {{ p4 | round(0) }} W  
-              Other Storage {{ other_w | round(0) }} W · Gesamt {{ live | round(0) }} W
           - type: entities
             entities:
-              - entity: sensor.gc_example_noah_generation_today
-                name: Generation Today (API)
-              - entity: sensor.gc_example_noah_generation_today_storage1
-                name: Generation Today PV1–4
-              - entity: sensor.gc_example_noah_generation_today_other_storage
-                name: Generation Today Other Storage
-              - entity: sensor.gc_example_noah_generation_total
-                name: Generation Total
+              - entity: sensor.gc_plant_generation_today
+                name: Solar
+              - entity: sensor.gc_plant_charged_today
+                name: Geladen
+              - entity: sensor.gc_plant_discharged_today
+                name: Entladen
+              - entity: sensor.gc_plant_energy_today
+                name: WR Abgabe
+              - entity: sensor.growatt_eigenverbrauch
+                name: Eigenverbrauch
+              - entity: sensor.growatt_autarkie
+                name: Autarkie
         column_span: 2
 
       - type: grid
         cards:
           - type: heading
-            heading: Solar Panele – Kurven (24 h)
-            heading_style: title
-          - type: history-graph
-            title: PV1–4 · Other Storage · Gesamt
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_example_noah_pv1_power
-                name: PV1
-              - entity: sensor.gc_example_noah_pv2_power
-                name: PV2
-              - entity: sensor.gc_example_noah_pv3_power
-                name: PV3
-              - entity: sensor.gc_example_noah_pv4_power
-                name: PV4
-              - entity: sensor.gc_example_noah_solar_power_other_storage
-                name: Other Storage
-              - entity: sensor.gc_example_noah_solar_power
-                name: Gesamt
-        column_span: 4
-
-      - type: grid
-        cards:
-          - type: heading
-            heading: Einzelpanele
-            heading_style: title
-          - type: history-graph
-            title: PV1
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_example_noah_pv1_power
-                name: PV1
-          - type: history-graph
-            title: PV2
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_example_noah_pv2_power
-                name: PV2
-          - type: history-graph
-            title: Other Storage
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_example_noah_solar_power_other_storage
-                name: Other Storage
-          - type: history-graph
-            title: PV3
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_example_noah_pv3_power
-                name: PV3
-          - type: history-graph
-            title: PV4
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_example_noah_pv4_power
-                name: PV4
-        column_span: 4
-
-      - type: grid
-        cards:
-          - type: heading
-            heading: Noah Fluss (24 h)
+            heading: Fluss (24 h)
             heading_style: title
           - type: history-graph
             title: Solar · Laden · Entladen · Abgabe
             hours_to_show: 24
             entities:
-              - entity: sensor.gc_example_noah_solar_power
+              - entity: sensor.gc_plant_solar_power
                 name: Solar
-              - entity: sensor.gc_example_noah_charging_power
+              - entity: sensor.gc_plant_charging_power
                 name: Laden
-              - entity: sensor.gc_example_noah_discharge_power
+              - entity: sensor.gc_plant_discharge_power
                 name: Entladen
-              - entity: sensor.gc_example_noah_output_power
+              - entity: sensor.gc_plant_output_power
                 name: Abgabe
           - type: history-graph
-            title: SoC Batterie 1 / 2
+            title: SoC
             hours_to_show: 24
             entities:
-              - entity: sensor.gc_example_noah_battery1_soc
-                name: Bat 1
-              - entity: sensor.gc_example_noah_battery2_soc
-                name: Bat 2
-              - entity: sensor.gc_example_noah_soc
-                name: Gesamt
+              - entity: sensor.gc_plant_soc
+                name: SoC
         column_span: 4
 
       - type: grid
         cards:
           - type: heading
-            heading: Nexa
-            heading_style: title
-          - type: gauge
-            entity: sensor.gc_example_nexa_soc
-            name: Nexa SoC
-            min: 0
-            max: 100
-            needle: true
-          - type: entities
-            entities:
-              - entity: sensor.gc_example_nexa_solar_power
-                name: Solar
-              - entity: sensor.gc_example_nexa_output_power
-                name: Abgabe
-              - entity: sensor.gc_example_nexa_generation_today
-                name: Heute
-          - type: history-graph
-            title: Nexa Solar / Abgabe
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_example_nexa_solar_power
-                name: Solar
-              - entity: sensor.gc_example_nexa_output_power
-                name: Abgabe
-        column_span: 2
-
-      - type: grid
-        cards:
-          - type: heading
-            heading: Wechselrichter (MIN)
+            heading: Wechselrichter
             heading_style: title
           - type: history-graph
             title: AC Output
             hours_to_show: 24
             entities:
-              - entity: sensor.gc_example_inverter_ac_power
+              - entity: sensor.gc_plant_ac_power
                 name: AC
-          - type: history-graph
-            title: WR PV Input
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_example_inverter_ppv
-                name: PV gesamt
-              - entity: sensor.gc_example_inverter_ppv1
-                name: PPV1
-              - entity: sensor.gc_example_inverter_ppv2
-                name: PPV2
           - type: markdown
-            title: WR heute
             content: |
-              {% set ac = states('sensor.gc_example_inverter_energy_today') | float(0) %}
-              {% set i1 = states('sensor.gc_example_inverter_energy_today_input_1') | float(0) %}
-              {% set i2 = states('sensor.gc_example_inverter_energy_today_input_2') | float(0) %}
-              {% set pv = i1 + i2 %}
-              {% set loss = pv - ac %}
-              {% set pct = (loss / pv * 100) if pv > 0 else 0 %}
-
-              **Input 1:** {{ i1 | round(2) }} kWh  
-              **Input 2:** {{ i2 | round(2) }} kWh  
-              **PV Summe:** {{ pv | round(2) }} kWh  
-              **AC Today:** {{ ac | round(2) }} kWh  
-              **Diff:** {{ loss | round(2) }} kWh ({{ pct | round(1) }} %)
+              Einzelne PV-Strings und WR-Inputs stehen am jeweiligen MQTT-Gerät
+              (`sensor.gc_<serial>_pv1_power`, `…_energy_today_input_1`).
+              Optional `input_text.growatt_inverter_id` auf den Serial-Suffix setzen.
         column_span: 2
 
       - type: grid
@@ -293,7 +144,7 @@ views:
               - entity: input_number.speicher_voll_last_w
                 name: Schwelle volle Last
               - entity: sensor.speicher_abgabe_summe
-                name: Abgabe Noah+Nexa
+                name: Abgabe Plant
               - entity: sensor.speicher_vollast_mehrbedarf
                 name: Mehrbedarf jetzt
               - entity: sensor.vollast_mit_mehrbedarf_min_heute

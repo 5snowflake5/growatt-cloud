@@ -11,6 +11,8 @@ image: "ghcr.io/fromwatertowind/growatt-cloud/{arch}"
 init: false
 startup: services
 boot: auto
+hassio_api: true
+homeassistant_api: true
 services:
   - mqtt:need
 options:
@@ -20,6 +22,8 @@ options:
   poll_inverter_seconds: 300
   poll_devices_seconds: 3600
   sensor_mode: useful
+  timezone: ""
+  pack_capacity_wh: 2048
   mqtt_host: core-mosquitto
   mqtt_port: 1883
   mqtt_user: ""
@@ -30,14 +34,16 @@ options:
 schema:
   api_token: password
   server_url: str
-  poll_storage_seconds: int(60,3600)
-  poll_inverter_seconds: int(300,7200)
-  poll_devices_seconds: int(300,86400)
+  poll_storage_seconds: int(1,86400)
+  poll_inverter_seconds: int(1,86400)
+  poll_devices_seconds: int(1,86400)
   sensor_mode: list(useful|full)
+  timezone: str?
+  pack_capacity_wh: int(0,200000)
   mqtt_host: str
   mqtt_port: port
-  mqtt_user: str
-  mqtt_password: password
+  mqtt_user: str?
+  mqtt_password: password?
   mqtt_discovery_prefix: str
   mqtt_state_prefix: str
   log_level: list(info|debug)
