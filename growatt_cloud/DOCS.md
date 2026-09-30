@@ -55,7 +55,7 @@ Option `sensor_mode`:
 - **`useful`** (Default): schlanke Live-Sensoren. Idle-Werte bleiben **0** (kein Löschen von Tages-kWh nachts).
 - **`full`**: mehr Felder, ohne BMS-Geister auf Balkon-WR.
 
-Zusätzlich: `charged_today` / `discharged_today`, `battery_energy`, Netz Import/Export, Gerät **Growatt Plant** (Summe aller Speicher/WR, Entity-IDs ohne persönliche Serial).
+Zusätzlich am **echten** Nexa/Noah (nicht als Extra-Gerät): `charged_today` / `discharged_today`, `battery_energy`, Netz Import/Export.
 
 Nach dem Update App **neu starten**.
 
@@ -75,7 +75,9 @@ Ein **zweites Cloud-Gerät** (eigene Serial) hat **eigene** PV1–4 – das ist 
 
 ## Geräte
 
-Serials und Typen werden **automatisch** aus der Geräteliste erkannt. Dashboards sollen `sensor.gc_plant_*` nutzen, nicht fest verdrahtete Serials.
+Serials und Typen werden **automatisch** aus der Geräteliste erkannt. Jedes echte Gerät (Nexa, Noah, WR) hat seine Sensoren selbst – **kein** virtuelles Plant-Gerät.
+
+Ungenutzte Geräte (z. B. alter Noah): `last_update` älter als `stale_after_hours` (Default 24) → in HA unavailable, Poll nur noch stündlich. Komplett ausnehmen: `skip_serials` in der App-Config (Serial, Komma-getrennt).
 
 ## Empfohlen nach Sperre
 

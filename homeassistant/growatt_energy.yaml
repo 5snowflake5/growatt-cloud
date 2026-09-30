@@ -1,15 +1,8 @@
 # Growatt energy helpers – no device serials in this file.
 #
 # Copy to /config/packages/growatt_energy.yaml
-# configuration.yaml:
-#   homeassistant:
-#     packages: !include_dir_named packages
-#
-# Uses MQTT plant sensors from the add-on (sensor.gc_plant_*).
-# Optional: set input_text.growatt_inverter_id to the lowercase inverter
-# serial (the suffix in sensor.gc_<suffix>_energy_today) for DC-input split.
-#
-# Add-on options: pack_capacity_wh (Wh per battery pack), timezone (empty = HA).
+# Set input_text.growatt_storage_id to the lowercase Nexa/Noah suffix
+# (from sensor.gc_<suffix>_soc). Optional: growatt_inverter_id for WR inputs.
 
 input_number:
   noah_s0_wh:
@@ -23,6 +16,12 @@ input_number:
     icon: mdi:battery-clock
 
 input_text:
+  growatt_storage_id:
+    name: Speicher-Suffix (Nexa/Noah)
+    min: 0
+    max: 32
+    mode: text
+    icon: mdi:battery
   growatt_inverter_id:
     name: Wechselrichter-Suffix (optional)
     min: 0
@@ -37,14 +36,80 @@ input_boolean:
 
 template:
   - sensor:
+      - name: "Growatt SoC"
+        unique_id: growatt_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        icon: mdi:battery
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_soc') }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ s not in ['', 'unknown', 'unavailable']
+             and states('sensor.gc_' ~ s ~ '_soc') | is_number }}
+
+      - name: "Growatt Solar Power"
+        unique_id: growatt_solar_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_solar_power') | float(0) | round(0) }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_solar_power') | is_number }}
+
+      - name: "Growatt Output Power"
+        unique_id: growatt_output_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_output_power') | float(0) | round(0) }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_output_power') | is_number }}
+
+      - name: "Growatt Charging Power"
+        unique_id: growatt_charging_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_charging_power') | float(0) | round(0) }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_charging_power') | is_number }}
+
+      - name: "Growatt Discharge Power"
+        unique_id: growatt_discharge_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_discharge_power') | float(0) | round(0) }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_discharge_power') | is_number }}
+
       - name: "Growatt Batterie Wh"
         unique_id: growatt_batterie_wh
         unit_of_measurement: "Wh"
         device_class: energy
         state_class: measurement
         icon: mdi:battery
-        state: "{{ states('sensor.gc_plant_battery_energy') | float(0) | round(0) }}"
-        availability: "{{ states('sensor.gc_plant_battery_energy') | is_number }}"
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_battery_energy') | float(0) | round(0) }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_battery_energy') | is_number }}
 
       - name: "Growatt Solar heute"
         unique_id: growatt_solar_heute
@@ -52,8 +117,12 @@ template:
         device_class: energy
         state_class: total
         icon: mdi:solar-power
-        state: "{{ states('sensor.gc_plant_generation_today') | float(0) | round(3) }}"
-        availability: "{{ states('sensor.gc_plant_generation_today') | is_number }}"
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_generation_today') | float(0) | round(3) }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_generation_today') | is_number }}
 
       - name: "Growatt geladen heute"
         unique_id: growatt_geladen_heute
@@ -61,8 +130,12 @@ template:
         device_class: energy
         state_class: total
         icon: mdi:battery-arrow-up
-        state: "{{ states('sensor.gc_plant_charged_today') | float(0) | round(3) }}"
-        availability: "{{ states('sensor.gc_plant_charged_today') | is_number }}"
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_charged_today') | float(0) | round(3) }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_charged_today') | is_number }}
 
       - name: "Growatt entladen heute"
         unique_id: growatt_entladen_heute
@@ -70,8 +143,12 @@ template:
         device_class: energy
         state_class: total
         icon: mdi:battery-arrow-down
-        state: "{{ states('sensor.gc_plant_discharged_today') | float(0) | round(3) }}"
-        availability: "{{ states('sensor.gc_plant_discharged_today') | is_number }}"
+        state: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_discharged_today') | float(0) | round(3) }}
+        availability: >-
+          {% set s = states('input_text.growatt_storage_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ s ~ '_discharged_today') | is_number }}
 
       - name: "Growatt zum WR heute"
         unique_id: growatt_zum_wr_heute
@@ -86,7 +163,7 @@ template:
             {% set i2 = states('sensor.gc_' ~ wr ~ '_energy_today_input_2') | float(0) %}
             {{ (i1 + i2) | round(3) }}
           {% else %}
-            {{ states('sensor.gc_plant_energy_today') | float(0) | round(3) }}
+            {{ states('sensor.gc_' ~ (states('input_text.growatt_inverter_id') | lower | trim) ~ '_energy_today') | float(0) | round(3) }}
           {% endif %}
 
       - name: "Growatt WR Abgabe heute"
@@ -95,8 +172,13 @@ template:
         device_class: energy
         state_class: total
         icon: mdi:home-export-outline
-        state: "{{ states('sensor.gc_plant_energy_today') | float(0) | round(3) }}"
-        availability: "{{ states('sensor.gc_plant_energy_today') | is_number }}"
+        state: >-
+          {% set wr = states('input_text.growatt_inverter_id') | lower | trim %}
+          {{ states('sensor.gc_' ~ wr ~ '_energy_today') | float(0) | round(3) }}
+        availability: >-
+          {% set wr = states('input_text.growatt_inverter_id') | lower | trim %}
+          {{ wr not in ['', 'unknown', 'unavailable']
+             and states('sensor.gc_' ~ wr ~ '_energy_today') | is_number }}
 
       - name: "Growatt WR Verlust heute"
         unique_id: growatt_wr_verlust_heute
@@ -171,7 +253,7 @@ template:
         icon: mdi:flash-alert
         state: >-
           {% set s2 = states('sensor.growatt_s2_theoretisch_wh') | float(0) %}
-          {% set s1 = states('sensor.gc_plant_battery_energy') | float(0) %}
+          {% set s1 = states('sensor.growatt_batterie_wh') | float(0) %}
           {{ (s2 - s1) | round(0) }}
 
 automation:
@@ -186,7 +268,7 @@ automation:
         target:
           entity_id: input_number.noah_s0_wh
         data:
-          value: "{{ states('sensor.gc_plant_battery_energy') | float(0) }}"
+          value: "{{ states('sensor.growatt_batterie_wh') | float(0) }}"
       - service: input_boolean.turn_on
         target:
           entity_id: input_boolean.noah_s0_gesetzt_heute

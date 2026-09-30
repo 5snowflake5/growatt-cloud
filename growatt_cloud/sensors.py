@@ -1025,6 +1025,29 @@ def to_iso_timestamp(value: Any, tz_name: str | None = None) -> Any:
     return value
 
 
+def is_reading_stale(
+    values: dict[str, Any],
+    *,
+    tz_name: str | None = None,
+    max_age_hours: float = 24.0,
+) -> bool:
+    """True if Growatt last_update is older than max_age_hours, or device is lost."""
+    if str(values.get("connectivity") or "").upper() == "OFF":
+        return True
+    raw = values.get("last_update")
+    if raw in (None, ""):
+        return False
+    text = str(to_iso_timestamp(raw, tz_name))
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    age_h = (datetime.now(dt.tzinfo) - dt).total_seconds() / 3600.0
+    return age_h > float(max_age_hours)
+
+
 def split_signed_power(watts: Any) -> tuple[float | None, float | None]:
     """Positive CT → grid import, negative → export (both ≥ 0)."""
     if watts is None or watts == "":

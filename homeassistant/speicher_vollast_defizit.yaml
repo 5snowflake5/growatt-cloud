@@ -1,7 +1,7 @@
 # Speicher volle Last + EcoTracker-Mehrbedarf (Minuten/Tag)
 #
 # Copy to /config/packages/speicher_vollast_defizit.yaml
-# Uses sensor.gc_plant_output_power (all Noah/Nexa summed by the add-on).
+# Uses sensor.growatt_output_power (from growatt_energy.yaml → Nexa suffix).
 
 input_number:
   speicher_voll_last_w:
@@ -22,8 +22,8 @@ template:
         device_class: power
         state_class: measurement
         icon: mdi:export
-        state: "{{ states('sensor.gc_plant_output_power') | float(0) | round(0) }}"
-        availability: "{{ states('sensor.gc_plant_output_power') | is_number }}"
+        state: "{{ states('sensor.growatt_output_power') | float(0) | round(0) }}"
+        availability: "{{ states('sensor.growatt_output_power') | is_number }}"
 
       - name: "Speicher Vollast Mehrbedarf"
         unique_id: speicher_vollast_mehrbedarf_w

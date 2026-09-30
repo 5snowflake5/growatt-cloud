@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import time
@@ -20,8 +21,8 @@ from api import (
     MIN_INTERVAL_OTHER_S,
 )
 from ha_env import resolve_mqtt, resolve_timezone
-from mqtt_ha import HaMqtt
-from sensors import apply_derived_values, ensure_storage_slots, merge_device_values
+from mqtt_ha import HaMqtt, slug
+from sensors import apply_derived_values, ensure_storage_slots, is_reading_stale, merge_device_values
 
 # VERSION = config.yaml version; nur Release-Workflow ändert beides
 VERSION = "0.1.30"
@@ -34,7 +35,6 @@ LOG = logging.getLogger("growatt-cloud")
 STORAGE_TYPES = {"noah", "nexa"}
 INVERTER_TYPES = {"min", "inv", "tlx"}
 INFO_INTERVAL_S = 300  # queryDeviceInfo / WiFi – offizielles Details-Limit
-PLANT_SERIAL = "plant"
 
 
 def setup_logging(level_name: str = "info") -> None:
@@ -108,6 +108,13 @@ class Bridge:
             self.pack_capacity_wh = float(env_or(opts, "pack_capacity_wh", 2048) or 0)
         except (TypeError, ValueError):
             self.pack_capacity_wh = 2048.0
+        try:
+            self.stale_after_hours = float(env_or(opts, "stale_after_hours", 24) or 24)
+        except (TypeError, ValueError):
+            self.stale_after_hours = 24.0
+        self.stale_after_hours = max(1.0, min(self.stale_after_hours, 720.0))
+        raw_skip = str(env_or(opts, "skip_serials", "") or "")
+        self.skip_serials = {s.strip().lower() for s in re.split(r"[,\s;]+", raw_skip) if s.strip()}
         self.tz_name = resolve_timezone(str(env_or(opts, "timezone", "") or ""))
         try:
             self._tz = ZoneInfo(self.tz_name)
@@ -137,10 +144,9 @@ class Bridge:
         self._last_inverter: dict[str, float] = {}
         self._pack_floor: dict[str, int] = {}
         self._energy_wh: dict[str, dict[str, float]] = {}
-        self._latest: dict[str, dict[str, Any]] = {}
-        self._latest_kind: dict[str, str] = {}
         self._last_energy_save = 0.0
         self._energy_dirty = False
+        self._stale_known: dict[str, bool] = {}
         self._load_energy_state()
 
     def request_stop(self, *_args) -> None:
@@ -250,71 +256,30 @@ class Bridge:
         values["discharged_today"] = round(float(state["discharge"]) / 1000.0, 3)
         self._save_energy_state()
 
-    def _publish_plant(self) -> None:
-        storage = [v for sn, v in self._latest.items() if self._latest_kind.get(sn) == "storage"]
-        inverters = [v for sn, v in self._latest.items() if self._latest_kind.get(sn) == "min"]
-        if not storage and not inverters:
+    def _is_skipped(self, sn: str) -> bool:
+        key = (sn or "").strip().lower()
+        if not key:
+            return False
+        return key in self.skip_serials or slug(sn) in self.skip_serials
+
+    def _poll_interval(self, sn: str, live_s: int) -> int:
+        if self._stale_known.get(sn):
+            return max(live_s, self.poll_devices_s)
+        return live_s
+
+    def _mark_stale(self, sn: str, values: dict[str, Any], reason: str) -> None:
+        already = bool(self._stale_known.get(sn))
+        self._stale_known[sn] = True
+        self.mqtt.set_available(sn, False)
+        if already:
             return
-
-        def _sum(rows: list[dict[str, Any]], key: str) -> float:
-            total = 0.0
-            for row in rows:
-                try:
-                    total += float(row.get(key) or 0.0)
-                except (TypeError, ValueError):
-                    continue
-            return total
-
-        values: dict[str, Any] = {
-            "family": "plant",
-            "label": "Plant",
-            "device_name": "Growatt Plant",
-            "product": "Plant",
-            "solar_power": round(_sum(storage, "solar_power"), 1),
-            "output_power": round(_sum(storage, "output_power"), 1),
-            "charging_power": round(_sum(storage, "charging_power"), 1),
-            "discharge_power": round(_sum(storage, "discharge_power"), 1),
-            "generation_today": round(_sum(storage, "generation_today"), 3),
-            "generation_total": round(_sum(storage, "generation_total"), 3),
-            "charged_today": round(_sum(storage, "charged_today"), 3),
-            "discharged_today": round(_sum(storage, "discharged_today"), 3),
-            "grid_import_power": round(_sum(storage, "grid_import_power"), 1),
-            "grid_export_power": round(_sum(storage, "grid_export_power"), 1),
-            "household_load": round(_sum(storage, "household_load"), 1),
-            "ac_power": round(_sum(inverters, "ac_power"), 1),
-            "energy_today": round(_sum(inverters, "energy_today"), 3),
-            "energy_total": round(_sum(inverters, "energy_total"), 3),
-            "connectivity": "ON",
-        }
-        energy = _sum(storage, "battery_energy")
-        if energy:
-            values["battery_energy"] = round(energy, 0)
-            cap = 0.0
-            weighted = 0.0
-            for row in storage:
-                try:
-                    e = float(row.get("battery_energy") or 0.0)
-                    soc = float(row.get("soc") or 0.0)
-                except (TypeError, ValueError):
-                    continue
-                if e > 0:
-                    cap += e / max(soc / 100.0, 0.001)
-                    weighted += soc * e
-            if energy > 0 and weighted:
-                values["soc"] = round(weighted / energy, 1)
-            values["battery_num"] = int(_sum(storage, "battery_num"))
-        elif storage:
-            socs = []
-            for row in storage:
-                try:
-                    if row.get("soc") is not None:
-                        socs.append(float(row["soc"]))
-                except (TypeError, ValueError):
-                    continue
-            if socs:
-                values["soc"] = round(sum(socs) / len(socs), 1)
-        self.mqtt.ensure_discovery(PLANT_SERIAL, "Plant", values)
-        self.mqtt.publish_states(PLANT_SERIAL, values)
+        LOG.warning(
+            "%s %s ist veraltet (%s, last_update=%s) – HA: unavailable, Poll nur noch stündlich",
+            values.get("label") or "Gerät",
+            sn,
+            reason,
+            values.get("last_update"),
+        )
 
     def refresh_devices(self, force: bool = False) -> None:
         now = time.monotonic()
@@ -324,18 +289,19 @@ class Bridge:
         self.devices = rows
         self._last_devices = now
         for row in rows:
-            LOG.info(
-                "Gerät: sn=%s type=%s",
-                row.get("deviceSn") or row.get("device_sn"),
-                row.get("deviceType") or row.get("device_type"),
-            )
+            sn = str(row.get("deviceSn") or row.get("device_sn") or "").strip()
+            dtype = str(row.get("deviceType") or row.get("device_type") or "").strip().lower()
+            LOG.info("Gerät: sn=%s type=%s", sn, dtype)
+            if sn and self._is_skipped(sn):
+                self.mqtt.set_available(sn, False)
+                LOG.info("Überspringe %s (skip_serials)", sn)
 
     def storage_targets(self) -> list[tuple[str, str]]:
         out: list[tuple[str, str]] = []
         for row in self.devices:
             sn = str(row.get("deviceSn") or row.get("device_sn") or "").strip()
             dtype = str(row.get("deviceType") or row.get("device_type") or "").strip().lower()
-            if sn and dtype in STORAGE_TYPES:
+            if sn and dtype in STORAGE_TYPES and not self._is_skipped(sn):
                 out.append((sn, "noah"))
         return out
 
@@ -344,7 +310,7 @@ class Bridge:
         for row in self.devices:
             sn = str(row.get("deviceSn") or row.get("device_sn") or "").strip()
             dtype = str(row.get("deviceType") or row.get("device_type") or "").strip().lower()
-            if sn and dtype in INVERTER_TYPES:
+            if sn and dtype in INVERTER_TYPES and not self._is_skipped(sn):
                 api_type = "min" if dtype in ("min", "tlx", "inv") else dtype
                 out.append((sn, api_type))
         return out
@@ -373,9 +339,8 @@ class Bridge:
 
     def poll_storage(self) -> None:
         now = time.monotonic()
-        changed = False
         for sn, api_type in self.storage_targets():
-            if now - self._last_storage.get(sn, 0.0) < self.poll_storage_s:
+            if now - self._last_storage.get(sn, 0.0) < self._poll_interval(sn, self.poll_storage_s):
                 continue
             try:
                 raw = self.api.query_last_data(sn, api_type)
@@ -387,13 +352,18 @@ class Bridge:
                     tz_name=self.tz_name,
                     pack_capacity_wh=self.pack_capacity_wh,
                 )
+                stale = is_reading_stale(
+                    values, tz_name=self.tz_name, max_age_hours=self.stale_after_hours
+                )
+                self._last_storage[sn] = time.monotonic()
+                if stale:
+                    self.mqtt.ensure_discovery(sn, values["label"], values)
+                    self._mark_stale(sn, values, f">{self.stale_after_hours:.0f}h")
+                    continue
+                self._stale_known[sn] = False
                 self._accumulate_energy(sn, values, self.poll_storage_s)
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
-                self._latest[sn] = values
-                self._latest_kind[sn] = "storage"
-                self._last_storage[sn] = time.monotonic()
-                changed = True
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
                     "%s %s SoC=%s%% PV=%.0fW PV1-4=%.0fW Other=%.0fW "
@@ -417,25 +387,27 @@ class Bridge:
                 LOG.error("Speicher %s: %s", sn, exc)
                 if exc.code in (100, 102, 10012):
                     self._last_storage[sn] = time.monotonic()
-        if changed:
-            self._publish_plant()
 
     def poll_inverter(self) -> None:
         now = time.monotonic()
-        changed = False
         for sn, api_type in self.inverter_targets():
             last = self._last_inverter.get(sn, 0.0)
-            if now - last < self.poll_inverter_s:
+            if now - last < self._poll_interval(sn, self.poll_inverter_s):
                 continue
             try:
                 raw = self.api.query_last_data(sn, api_type)
                 values = self._enrich(sn, api_type, raw, "min")
+                stale = is_reading_stale(
+                    values, tz_name=self.tz_name, max_age_hours=self.stale_after_hours
+                )
+                self._last_inverter[sn] = time.monotonic()
+                if stale:
+                    self.mqtt.ensure_discovery(sn, values["label"], values)
+                    self._mark_stale(sn, values, f">{self.stale_after_hours:.0f}h")
+                    continue
+                self._stale_known[sn] = False
                 self.mqtt.ensure_discovery(sn, values["label"], values)
                 self.mqtt.publish_states(sn, values)
-                self._latest[sn] = values
-                self._latest_kind[sn] = "min"
-                self._last_inverter[sn] = time.monotonic()
-                changed = True
                 entity_n = len([k for k in values if k not in ("family", "label", "time", "device_name")])
                 LOG.info(
                     "WR %s AC=%.0fW Today=%.2fkWh In1=%.2f In2=%.2f mode=%s entities=%s",
@@ -451,20 +423,22 @@ class Bridge:
                 LOG.error("WR %s: %s", sn, exc)
                 if exc.code in (100, 102, 10012):
                     self._last_inverter[sn] = time.monotonic()
-        if changed:
-            self._publish_plant()
 
     def run(self) -> None:
         LOG.info(
-            "growatt_cloud %s start (Geräte auto, sensor_mode=%s, tz=%s, pack_wh=%s)",
+            "growatt_cloud %s start (Geräte auto, sensor_mode=%s, tz=%s, pack_wh=%s, stale>%sh)",
             VERSION,
             self.sensor_mode,
             self.tz_name,
             self.pack_capacity_wh,
+            self.stale_after_hours,
         )
+        if self.skip_serials:
+            LOG.info("skip_serials=%s", ",".join(sorted(self.skip_serials)))
         self.mqtt.connect()
         if not self.mqtt.wait_connected(5):
             LOG.warning("Starte Poll-Loop trotzdem – MQTT-Reconnect läuft im Hintergrund")
+        self.mqtt.forget_plant()
         while not self.stop:
             try:
                 self.refresh_devices(force=not self.devices)

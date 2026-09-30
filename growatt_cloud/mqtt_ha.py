@@ -144,7 +144,7 @@ SENSOR_META: dict[str, tuple[str, str | None, str | None, str | None, str]] = {
 
 _META_SKIP = {"family", "label", "time", "device_name"}
 
-DISCOVERY_SIG_VERSION = "v9"
+DISCOVERY_SIG_VERSION = "v10"
 
 SENSOR_ICONS: dict[str, str] = {
     "soc": "mdi:battery",
@@ -305,6 +305,7 @@ class HaMqtt:
         self._wanted_by_node: dict[str, set[str]] = {}
         self._subscribed_nodes: set[str] = set()
         self._stale_purged: set[str] = set()
+        self._plant_purged = False
         self._connected = threading.Event()
         self._keys_path = "/data/growatt_discovery_keys.json"
         self._load_discovery_keys()
@@ -353,6 +354,7 @@ class HaMqtt:
                 self._load_discovery_keys()
                 self._subscribed_nodes.clear()
                 self._stale_purged.clear()
+                self._plant_purged = False
                 c.publish(f"{self.state_prefix}/status", "online", retain=True)
                 self._connected.set()
             else:
@@ -486,7 +488,7 @@ class HaMqtt:
             "default_entity_id": entity_id,
             "state_topic": state_topic,
             "device": device,
-            "availability_topic": f"{self.state_prefix}/status",
+            "availability_topic": f"{self.state_prefix}/{node}/available",
             "payload_available": "online",
             "payload_not_available": "offline",
         }
@@ -542,6 +544,7 @@ class HaMqtt:
             self._discovery_keys[serial] = new_keys
             self._save_discovery_keys()
             self._purge_fake_tower_devices(serial)
+            self._purge_plant_device()
             return
 
         device = self._device(serial, device_name, model)
@@ -582,8 +585,65 @@ class HaMqtt:
                 node,
             )
         self._purge_fake_tower_devices(serial)
+        self._purge_plant_device()
         if mode_changed:
             time.sleep(0.25)
+
+    def set_available(self, serial: str, online: bool) -> None:
+        node = slug(serial)
+        self._pub(
+            f"{self.state_prefix}/{node}/available",
+            "online" if online else "offline",
+            retain=True,
+        )
+
+    def purge_device(self, serial: str, extra_keys: set[str] | None = None) -> None:
+        """Remove a virtual/stale MQTT device (discovery + retained states)."""
+        node = slug(serial)
+        keys = set(self._discovery_keys.get(serial) or set())
+        if extra_keys:
+            keys |= extra_keys
+        for oid in sorted(keys):
+            self._clear_discovery(node, oid)
+        self.set_available(serial, False)
+        self._discovery_keys.pop(serial, None)
+        self._discovery_sig.pop(serial, None)
+        self._wanted_by_node.pop(node, None)
+        self._save_discovery_keys()
+        LOG.info("MQTT-Gerät entfernt: %s", serial)
+
+    def _purge_plant_device(self) -> None:
+        """0.1.30 virtual Plant device – does not belong next to Noah/Nexa."""
+        if self._plant_purged:
+            return
+        extra = {
+            "soc",
+            "solar_power",
+            "output_power",
+            "charging_power",
+            "discharge_power",
+            "generation_today",
+            "generation_total",
+            "charged_today",
+            "discharged_today",
+            "grid_import_power",
+            "grid_export_power",
+            "household_load",
+            "ac_power",
+            "energy_today",
+            "energy_total",
+            "battery_energy",
+            "battery_num",
+            "connectivity",
+            "product",
+            "time_to_empty",
+            "time_to_full",
+        }
+        self.purge_device("plant", extra_keys=extra)
+        self._plant_purged = True
+
+    def forget_plant(self) -> None:
+        self._purge_plant_device()
 
     def _purge_fake_tower_devices(self, serial: str) -> None:
         """Einmalig: virtuelle Noah Speicher 2/Tower-Geräte aus MQTT Discovery entfernen."""
@@ -608,4 +668,5 @@ class HaMqtt:
             if value is None:
                 continue
             self._pub(f"{self.state_prefix}/{node}/{key}", str(value), retain=True)
+        self.set_available(serial, True)
         self._pub(f"{self.state_prefix}/status", "online", retain=True)

@@ -1,2 +1,2 @@
-# Moved to growatt_energy.yaml (plant sensors, no device serials).
+# Moved to growatt_energy.yaml (Nexa suffix via input_text.growatt_storage_id).
 # Do not copy this file into packages – unique_ids would clash.

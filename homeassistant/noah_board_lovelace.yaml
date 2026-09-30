@@ -1,4 +1,4 @@
-# Energie-Dashboard – Tabelle + Sankey (plant sensors, no serials)
+# Energie-Dashboard – Tabelle + Sankey (Nexa via growatt_energy.yaml)
 #
 # Requires: growatt_energy.yaml package
 # HACS: Sankey Chart Card (MindFreeze)
@@ -22,8 +22,8 @@ views:
             heading_style: title
           - type: markdown
             content: |
-              {% set speicher_jetzt = states('sensor.gc_plant_battery_energy') | float(0) %}
-              {% set soc = states('sensor.gc_plant_soc') | float(0) %}
+              {% set speicher_jetzt = states('sensor.growatt_batterie_wh') | float(0) %}
+              {% set soc = states('sensor.growatt_soc') | float(0) %}
               {% set soc0 = states('input_number.noah_s0_wh') | float(speicher_jetzt) %}
               {% set solar = states('sensor.growatt_solar_heute') | float(0) %}
               {% set geladen = states('sensor.growatt_geladen_heute') | float(0) %}
@@ -54,7 +54,7 @@ views:
               Batterie: {{ soc | round(0) }} % jetzt · Start {{ soc0 | round(0) }} Wh  
               Eigenverbrauch {{ eigen | round(0) }} % · Autarkie {{ autark | round(0) }} %
           - type: gauge
-            entity: sensor.gc_plant_soc
+            entity: sensor.growatt_soc
             name: Batterie jetzt
             min: 0
             max: 100
@@ -178,19 +178,19 @@ views:
             heading: Live
             heading_style: title
           - type: entity
-            entity: sensor.gc_plant_solar_power
+            entity: sensor.growatt_solar_power
             name: Solar
           - type: entity
-            entity: sensor.gc_plant_charging_power
+            entity: sensor.growatt_charging_power
             name: Laden
           - type: entity
-            entity: sensor.gc_plant_discharge_power
+            entity: sensor.growatt_discharge_power
             name: Entladen
           - type: entity
-            entity: sensor.gc_plant_output_power
+            entity: sensor.growatt_output_power
             name: Abgabe
           - type: entity
-            entity: sensor.gc_plant_ac_power
+            entity: sensor.growatt_wr_abgabe_heute
             name: WR Ausgang
           - type: entity
             entity: sensor.ecotracker_power
@@ -210,7 +210,7 @@ views:
             stat_types:
               - change
             entities:
-              - entity: sensor.gc_plant_generation_total
+              - entity: sensor.growatt_solar_heute
                 name: Solar
           - type: statistics-graph
             title: Vom Balkon (WR)
@@ -220,7 +220,7 @@ views:
             stat_types:
               - change
             entities:
-              - entity: sensor.gc_plant_energy_total
+              - entity: sensor.growatt_wr_abgabe_heute
                 name: WR→Haus
           - type: statistics-graph
             title: Netz (EcoTracker)

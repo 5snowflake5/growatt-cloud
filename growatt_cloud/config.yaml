@@ -24,6 +24,8 @@ options:
   sensor_mode: useful
   timezone: ""
   pack_capacity_wh: 2048
+  stale_after_hours: 24
+  skip_serials: ""
   mqtt_host: core-mosquitto
   mqtt_port: 1883
   mqtt_user: ""
@@ -40,6 +42,8 @@ schema:
   sensor_mode: list(useful|full)
   timezone: str?
   pack_capacity_wh: int(0,200000)
+  stale_after_hours: int(1,720)
+  skip_serials: str?
   mqtt_host: str
   mqtt_port: port
   mqtt_user: str?

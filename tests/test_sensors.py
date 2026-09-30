@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "growatt_cloud"))
 
 from sensors import (  # noqa: E402
     apply_derived_values,
-    filter_published_values,
+    is_reading_stale,
     merge_device_values,
     split_signed_power,
     to_iso_timestamp,
@@ -80,6 +80,26 @@ class DerivedTests(unittest.TestCase):
         self.assertGreater(values["time_to_empty"], 0)
 
 
+class StaleTests(unittest.TestCase):
+    def test_month_old_is_stale(self):
+        self.assertTrue(
+            is_reading_stale(
+                {"last_update": "2026-08-01T10:00:00+00:00"},
+                tz_name="UTC",
+                max_age_hours=24,
+            )
+        )
+
+    def test_fresh_is_not_stale(self):
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).isoformat()
+        self.assertFalse(is_reading_stale({"last_update": now}, tz_name="UTC", max_age_hours=24))
+
+    def test_lost_is_stale(self):
+        self.assertTrue(is_reading_stale({"connectivity": "OFF"}, tz_name="UTC", max_age_hours=24))
+
+
 class NoSerialLeakTests(unittest.TestCase):
     FORBIDDEN = (
         "".join(("0PVP", "00ED", "26UT", "03E9")),
@@ -98,6 +118,7 @@ class NoSerialLeakTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             for token in self.FORBIDDEN:
                 self.assertNotIn(token, text, msg=f"{path} contains {token}")
+            self.assertNotIn("gc_plant", text, msg=f"{path} still references Plant")
 
 
 if __name__ == "__main__":

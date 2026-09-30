@@ -1,8 +1,7 @@
-# Growatt / Plant – Auswertung (Sections-View)
+# Growatt – Auswertung (Nexa via growatt_energy.yaml helpers)
 #
-# Entity-IDs from the add-on plant device (no personal serials):
-#   sensor.gc_plant_*
-# Per-device PV strings: Settings → Devices → the Noah/Nexa MQTT device.
+# Set input_text.growatt_storage_id to the Nexa entity suffix.
+# Per-device PV strings: Settings → Devices → Nexa MQTT device.
 #
 # Dashboard → ⋮ → Raw configuration → under `views:` paste.
 
@@ -18,7 +17,7 @@ views:
             heading: Speicher – jetzt
             heading_style: title
           - type: gauge
-            entity: sensor.gc_plant_soc
+            entity: sensor.growatt_soc
             name: SoC gesamt
             min: 0
             max: 100
@@ -29,20 +28,16 @@ views:
               green: 40
           - type: entities
             entities:
-              - entity: sensor.gc_plant_solar_power
+              - entity: sensor.growatt_solar_power
                 name: Solar gesamt
-              - entity: sensor.gc_plant_output_power
+              - entity: sensor.growatt_output_power
                 name: Abgabe
-              - entity: sensor.gc_plant_charging_power
+              - entity: sensor.growatt_charging_power
                 name: Laden
-              - entity: sensor.gc_plant_discharge_power
+              - entity: sensor.growatt_discharge_power
                 name: Entladen
-              - entity: sensor.gc_plant_battery_energy
+              - entity: sensor.growatt_batterie_wh
                 name: Batterie Wh
-              - entity: sensor.gc_plant_grid_import_power
-                name: Netzbezug
-              - entity: sensor.gc_plant_grid_export_power
-                name: Einspeisung
         column_span: 2
 
       - type: grid
@@ -52,13 +47,13 @@ views:
             heading_style: title
           - type: entities
             entities:
-              - entity: sensor.gc_plant_generation_today
+              - entity: sensor.growatt_solar_heute
                 name: Solar
-              - entity: sensor.gc_plant_charged_today
+              - entity: sensor.growatt_geladen_heute
                 name: Geladen
-              - entity: sensor.gc_plant_discharged_today
+              - entity: sensor.growatt_entladen_heute
                 name: Entladen
-              - entity: sensor.gc_plant_energy_today
+              - entity: sensor.growatt_wr_abgabe_heute
                 name: WR Abgabe
               - entity: sensor.growatt_eigenverbrauch
                 name: Eigenverbrauch
@@ -75,19 +70,19 @@ views:
             title: Solar · Laden · Entladen · Abgabe
             hours_to_show: 24
             entities:
-              - entity: sensor.gc_plant_solar_power
+              - entity: sensor.growatt_solar_power
                 name: Solar
-              - entity: sensor.gc_plant_charging_power
+              - entity: sensor.growatt_charging_power
                 name: Laden
-              - entity: sensor.gc_plant_discharge_power
+              - entity: sensor.growatt_discharge_power
                 name: Entladen
-              - entity: sensor.gc_plant_output_power
+              - entity: sensor.growatt_output_power
                 name: Abgabe
           - type: history-graph
             title: SoC
             hours_to_show: 24
             entities:
-              - entity: sensor.gc_plant_soc
+              - entity: sensor.growatt_soc
                 name: SoC
         column_span: 4
 
@@ -96,17 +91,11 @@ views:
           - type: heading
             heading: Wechselrichter
             heading_style: title
-          - type: history-graph
-            title: AC Output
-            hours_to_show: 24
-            entities:
-              - entity: sensor.gc_plant_ac_power
-                name: AC
           - type: markdown
             content: |
-              Einzelne PV-Strings und WR-Inputs stehen am jeweiligen MQTT-Gerät
-              (`sensor.gc_<serial>_pv1_power`, `…_energy_today_input_1`).
-              Optional `input_text.growatt_inverter_id` auf den Serial-Suffix setzen.
+              WR-Leistung und PV-Strings stehen am jeweiligen MQTT-Gerät
+              (Einstellungen → Geräte). Optional `input_text.growatt_inverter_id`
+              auf den Kleinbuchstaben-Suffix setzen.
         column_span: 2
 
       - type: grid
