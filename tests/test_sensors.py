@@ -121,5 +121,22 @@ class NoSerialLeakTests(unittest.TestCase):
             self.assertNotIn("gc_plant", text, msg=f"{path} still references Plant")
 
 
+class NoOldGithubUserTests(unittest.TestCase):
+    TOKEN = "".join(("5snow", "flake", "5"))
+
+    def test_working_tree(self):
+        skip_dirs = {".git"}
+        for path in ROOT.rglob("*"):
+            if any(part in skip_dirs for part in path.parts):
+                continue
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            self.assertNotIn(self.TOKEN, text, msg=f"{path} still has the old GitHub user")
+
+
 if __name__ == "__main__":
     unittest.main()

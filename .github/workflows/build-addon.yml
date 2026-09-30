@@ -54,5 +54,5 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ghcr.io/fromwatertowind/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.tag }}
-            ghcr.io/fromwatertowind/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.sha_tag }}
+            ghcr.io/${{ github.repository_owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.sha_tag }}

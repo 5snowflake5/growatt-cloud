@@ -4,20 +4,15 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Changed
+- GitHub- und GHCR-Pfade auf den aktuellen Account `fromWaterToWind` (HA zieht das Image sonst nicht).
+
 ## [0.1.31] – 2026-09-30
 
 ### Changed
 - Plant-Gerät entfernt; veralteter Noah unavailable; Extra-Sensoren am Nexa.
-## [Unreleased]
-
-### Removed
-- Virtuelles MQTT-Gerät **Growatt Plant** (hat Noah+Nexa summiert, deshalb falsche 1700 W / 1200 W). Extra-Sensoren (`charged_today`, `battery_energy`, …) liegen am echten Nexa/Noah.
-
-### Fixed
-- Geräte mit `last_update` älter als `stale_after_hours` (Default 24 h) gelten als tot: HA **unavailable**, kein 60-s-Poll, keine Energie-Integration alter Werte.
-
-### Added
-- Option `skip_serials` (Komma-getrennt), um z. B. ungenutzten Noah gar nicht zu pollen.
 
 ## [0.1.30] – 2026-09-30
 

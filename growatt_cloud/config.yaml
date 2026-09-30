@@ -7,7 +7,7 @@ url: https://github.com/fromWaterToWind/growatt-cloud
 arch:
   - aarch64
   - amd64
-image: "ghcr.io/fromwatertowind/growatt-cloud/{arch}"
+image: "ghcr.io/fromWaterToWind/growatt-cloud/{arch}"
 init: false
 startup: services
 boot: auto

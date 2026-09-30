@@ -71,15 +71,16 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ghcr.io/fromwatertowind/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
-            ghcr.io/fromwatertowind/growatt-cloud/${{ matrix.arch }}:latest
+            ghcr.io/${{ github.repository_owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/growatt-cloud/${{ matrix.arch }}:latest
 
       - name: Prüfen ob Image anonym pullbar ist (HA braucht public GHCR)
         continue-on-error: true
         run: |
           TAG="${{ steps.ver.outputs.version }}"
           ARCH="${{ matrix.arch }}"
-          URL="https://ghcr.io/v2/fromWaterToWind/growatt-cloud/${ARCH}/manifests/${TAG}"
+          OWNER="${{ github.repository_owner }}"
+          URL="https://ghcr.io/v2/${OWNER}/growatt-cloud/${ARCH}/manifests/${TAG}"
           CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
             "$URL")
@@ -88,7 +89,7 @@ jobs:
           else
             echo "::warning::GHCR growatt-cloud/${ARCH} ist noch private (HTTP ${CODE})."
             echo "Einmalig: Package settings → Change visibility → Public"
-            echo "https://github.com/users/fromWaterToWind/packages/container/growatt-cloud%2F${ARCH}/settings"
+            echo "https://github.com/users/${OWNER}/packages/container/growatt-cloud%2F${ARCH}/settings"
           fi
 
   publish-version:
