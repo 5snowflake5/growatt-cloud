@@ -4,6 +4,10 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.31] – 2026-09-30
+
+### Changed
+- Plant-Gerät entfernt; veralteter Noah unavailable; Extra-Sensoren am Nexa.
 ## [Unreleased]
 
 ### Removed
