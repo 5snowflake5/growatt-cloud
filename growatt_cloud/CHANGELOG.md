@@ -7,7 +7,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 ## [Unreleased]
 
 ### Changed
-- GitHub- und GHCR-Pfade auf den aktuellen Account `fromWaterToWind` (HA zieht das Image sonst nicht).
+- GitHub-Repo auf `fromWaterToWind`, GHCR-Image auf `fromwatertowind` (Docker verlangt Kleinbuchstaben).
 
 ## [0.1.31] – 2026-09-30
 

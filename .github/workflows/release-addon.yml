@@ -48,8 +48,10 @@ jobs:
             exit 1
           fi
           CUR=$(sed -n 's/^version: "\(.*\)"/\1/p' growatt_cloud/config.yaml | head -1)
+          OWNER="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
           echo "current=$CUR" >> "$GITHUB_OUTPUT"
           echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
           echo "Release $CUR → $V (${{ matrix.arch }})"
           sed -i "s/^version: \".*\"/version: \"$V\"/" growatt_cloud/config.yaml
           sed -i "s/^VERSION = \".*\"/VERSION = \"$V\"/" growatt_cloud/growatt_cloud.py
@@ -71,15 +73,15 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ghcr.io/${{ github.repository_owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/growatt-cloud/${{ matrix.arch }}:latest
+            ghcr.io/${{ steps.ver.outputs.owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.version }}
+            ghcr.io/${{ steps.ver.outputs.owner }}/growatt-cloud/${{ matrix.arch }}:latest
 
       - name: Prüfen ob Image anonym pullbar ist (HA braucht public GHCR)
         continue-on-error: true
         run: |
           TAG="${{ steps.ver.outputs.version }}"
           ARCH="${{ matrix.arch }}"
-          OWNER="${{ github.repository_owner }}"
+          OWNER="${{ steps.ver.outputs.owner }}"
           URL="https://ghcr.io/v2/${OWNER}/growatt-cloud/${ARCH}/manifests/${TAG}"
           CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \

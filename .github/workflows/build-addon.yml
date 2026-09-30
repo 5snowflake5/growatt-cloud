@@ -33,8 +33,10 @@ jobs:
         id: ver
         run: |
           sha="${GITHUB_SHA::7}"
+          OWNER="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
           echo "tag=edge" >> "$GITHUB_OUTPUT"
           echo "sha_tag=sha-$sha" >> "$GITHUB_OUTPUT"
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
           echo "Building growatt_cloud edge ($sha) for ${{ matrix.arch }}"
 
       - uses: docker/setup-qemu-action@v3
@@ -54,5 +56,5 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ghcr.io/${{ github.repository_owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.tag }}
-            ghcr.io/${{ github.repository_owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.sha_tag }}
+            ghcr.io/${{ steps.ver.outputs.owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.tag }}
+            ghcr.io/${{ steps.ver.outputs.owner }}/growatt-cloud/${{ matrix.arch }}:${{ steps.ver.outputs.sha_tag }}
