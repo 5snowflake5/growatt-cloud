@@ -42,7 +42,7 @@ schema:
   sensor_mode: list(useful|full)
   timezone: str?
   pack_capacity_wh: int(0,200000)
-  stale_after_hours: int(1,720)
+  stale_after_hours: int(1,720)?
   skip_serials: str?
   mqtt_host: str
   mqtt_port: port

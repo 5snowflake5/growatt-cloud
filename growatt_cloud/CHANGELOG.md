@@ -4,14 +4,15 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+- App-Config speichern: `stale_after_hours` / `skip_serials` fehlen in älteren Installationen – Schema optional, Default 24 h.
+
 ## [0.1.32] – 2026-09-30
 
 ### Changed
 - GitHub/GHCR-Pfade auf fromWaterToWind, Image-Namespace klein geschrieben.
-## [Unreleased]
-
-### Changed
-- GitHub-Repo auf `fromWaterToWind`, GHCR-Image auf `fromwatertowind` (Docker verlangt Kleinbuchstaben).
 
 ## [0.1.31] – 2026-09-30
 
