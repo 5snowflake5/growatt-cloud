@@ -4,7 +4,7 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.1.30] – 2026-09-30
 
 ### Added
 - Plant-Gerät `sensor.gc_plant_*` (Summe Speicher/WR, Dashboards ohne Geräte-Serial).
