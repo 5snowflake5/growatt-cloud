@@ -4,6 +4,10 @@ Alle bemerkenswerten Änderungen an **Growatt Cloud**.
 
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.33] – 2026-09-30
+
+### Changed
+- Config speichern ohne stale_after_hours (ältere Installationen).
 ## [Unreleased]
 
 ### Fixed
